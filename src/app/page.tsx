@@ -13,9 +13,9 @@ export default function BerandaPage() {
   const stats = {
     totalSantri: santriList.length,
     kehadiranHariIni: {
-      hadir: 3,
-      izin: 1,
-      sakit: 1,
+      hadir: 0,
+      izin: 0,
+      sakit: 0,
       alpa: 0,
     },
     tanggal: new Date().toLocaleDateString('id-ID', {
@@ -25,6 +25,7 @@ export default function BerandaPage() {
       year: 'numeric',
     }),
   };
+
 
   return (
     <div className="space-y-5">

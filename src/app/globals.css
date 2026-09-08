@@ -26,3 +26,112 @@ body {
   border-radius: 3px;
 }
 
+/* ===================== PWA SPLASH SCREEN ===================== */
+#pwa-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #0EA5E9 0%, #0369A1 60%, #075985 100%);
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+}
+
+#pwa-splash.splash-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.splash-logo {
+  width: 100px;
+  height: 100px;
+  border-radius: 24px;
+  object-fit: cover;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: splashLogoIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.splash-title {
+  color: white;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-top: 20px;
+  animation: splashTextIn 0.5s ease 0.25s both;
+}
+
+.splash-subtitle {
+  color: rgba(255,255,255,0.75);
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 6px;
+  animation: splashTextIn 0.5s ease 0.4s both;
+}
+
+.splash-loader {
+  width: 140px;
+  height: 3px;
+  background: rgba(255,255,255,0.25);
+  border-radius: 10px;
+  margin-top: 40px;
+  overflow: hidden;
+  animation: splashTextIn 0.5s ease 0.5s both;
+}
+
+.splash-loader-bar {
+  height: 100%;
+  background: white;
+  border-radius: 10px;
+  animation: loaderFill 1.2s ease 0.6s forwards;
+  width: 0%;
+}
+
+.splash-dots {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+  animation: splashTextIn 0.5s ease 0.6s both;
+}
+
+.splash-dots span {
+  width: 6px;
+  height: 6px;
+  background: rgba(255,255,255,0.5);
+  border-radius: 50%;
+  animation: dotPulse 1.2s ease-in-out infinite;
+}
+.splash-dots span:nth-child(2) { animation-delay: 0.2s; }
+.splash-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* Page content fade-in after splash */
+.app-content-ready {
+  animation: contentFadeIn 0.4s ease forwards;
+}
+
+@keyframes splashLogoIn {
+  from { transform: scale(0.4) rotate(-10deg); opacity: 0; }
+  to   { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes splashTextIn {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes loaderFill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+
+@keyframes dotPulse {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+@keyframes contentFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

@@ -313,15 +313,21 @@ export default function KeuanganPage() {
       <div className="space-y-2">
         <div className="flex items-center justify-between px-1">
           <h3 className="font-bold text-xs text-slate-500 uppercase tracking-wider">
-            Rekapan Tagihan &amp; Pembayaran Santri ({santriFinances.length})
+            Rekapan Tagihan &amp; Pembayaran Santri ({santriList.length})
           </h3>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
           <div className="divide-y divide-slate-100">
-            {santriFinances.length === 0 ? (
-              <div className="p-6 text-center text-slate-400 text-xs italic">
-                Belum ada data santri terdaftar.
+            {santriList.length === 0 ? (
+              <div className="p-8 text-center space-y-3">
+                <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto">
+                  <Receipt className="w-7 h-7 text-slate-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-600">Belum Ada Data Santri</p>
+                  <p className="text-xs text-slate-400 mt-1">Tambahkan data santri terlebih dahulu untuk melihat rekap tagihan dan pembayaran.</p>
+                </div>
               </div>
             ) : (
               santriFinances.map((santri) => {
@@ -363,6 +369,7 @@ export default function KeuanganPage() {
                 );
               })
             )}
+
           </div>
         </div>
       </div>
