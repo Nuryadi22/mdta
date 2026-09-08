@@ -1,0 +1,116 @@
+// Prisma Schema untuk MDTA App (MySQL Database)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Gender {
+  LAKIKLAKI
+  PEREMPUAN
+}
+
+enum AttendanceStatus {
+  HADIR
+  SAKIT
+  IZIN
+  ALPA
+}
+
+enum CommitStatus {
+  DRAFT
+  FINAL
+}
+
+model User {
+  id           Int           @id @default(autoincrement())
+  name         String        @db.VarChar(100)
+  username     String        @unique @db.VarChar(50)
+  password     String        @db.VarChar(255)
+  role         String        @default("USTADZ") @db.VarChar(20)
+  mdtaName     String        @default("MDTA Al-Hikmah") @db.VarChar(100)
+  photoUrl     String?       @db.VarChar(255)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  cashHandouts CashHandout[]
+
+  @@map("users")
+}
+
+model Santri {
+  id         Int          @id @default(autoincrement())
+  name       String       @db.VarChar(100)
+  birthPlace String       @db.VarChar(100)
+  birthDate  DateTime     @db.Date
+  gender     Gender
+  phone      String       @db.VarChar(20)
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  attendances Attendance[]
+  payments   Payment[]
+
+  @@map("santri")
+}
+
+model Attendance {
+  id           Int              @id @default(autoincrement())
+  santriId     Int
+  date         DateTime         @db.Date
+  status       AttendanceStatus
+  notes        String?          @db.VarChar(255)
+  commitStatus CommitStatus     @default(DRAFT)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  santri Santri @relation(fields: [santriId], references: [id], onDelete: Cascade)
+
+  @@unique([santriId, date])
+  @@map("attendances")
+}
+
+model FeeCategory {
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(100)
+  amount      Decimal   @db.Decimal(12, 2)
+  description String?   @db.VarChar(255)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  payments    Payment[]
+
+  @@map("fee_categories")
+}
+
+model Payment {
+  id            Int         @id @default(autoincrement())
+  santriId      Int
+  feeCategoryId Int
+  amount        Decimal     @db.Decimal(12, 2)
+  paymentDate   DateTime    @db.Date
+  notes         String?     @db.VarChar(255)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  santri      Santri      @relation(fields: [santriId], references: [id], onDelete: Cascade)
+  feeCategory FeeCategory @relation(fields: [feeCategoryId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model CashHandout {
+  id          Int      @id @default(autoincrement())
+  amount      Decimal  @db.Decimal(12, 2)
+  depositDate DateTime @db.Date
+  description String   @db.VarChar(255)
+  ustadzId    Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ustadz User @relation(fields: [ustadzId], references: [id], onDelete: Cascade)
+
+  @@map("cash_handouts")
+}
