@@ -4,12 +4,15 @@ import React from 'react';
 import { useActionState } from 'react';
 import { login } from '@/app/actions/auth';
 import { BookOpen, Lock, User, LogIn, AlertCircle } from 'lucide-react';
+import SplashScreen from '@/components/SplashScreen';
 
 export default function LoginPage() {
   const [state, action, pending] = useActionState(login, undefined);
 
   return (
-    <div className="min-h-[85vh] flex flex-col justify-center py-6 px-2">
+    <>
+      <SplashScreen />
+      <div className="min-h-[85vh] flex flex-col justify-center py-6 px-2">
       <div className="bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden max-w-sm mx-auto w-full">
         {/* Header Branding (Sky Blue Solid) */}
         <div className="bg-sky-500 text-white p-6 text-center space-y-2">
@@ -86,7 +89,8 @@ export default function LoginPage() {
         <div className="bg-slate-50 border-t border-slate-100 p-3 text-center text-[10px] text-slate-400">
           MDTA Mobile App &bull; 2026 by NYD
         </div>
-      </div>
+        </div>
     </div>
+    </>
   );
 }

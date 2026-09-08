@@ -1,17 +1,16 @@
-const CACHE_NAME = 'mdta-pwa-v1';
-const URLS_TO_CACHE = [
-  '/',
+const CACHE_NAME = 'mdta-pwa-v2';
+const STATIC_ASSETS = [
   '/manifest.json',
-  '/favicon.ico',
-  '/mdta.ico',
   '/icon-192.png',
   '/icon-512.png',
+  '/favicon.ico',
 ];
 
+// Install: cache hanya static assets, BUKAN halaman navigasi
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(URLS_TO_CACHE).catch((err) => {
+      return cache.addAll(STATIC_ASSETS).catch((err) => {
         console.warn('Failed to pre-cache some assets:', err);
       });
     })
@@ -19,6 +18,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
+// Activate: hapus cache lama
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -35,38 +35,50 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Ignore non-GET requests
+  // Abaikan non-GET
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
 
-  // Ignore non-http/https requests (e.g. chrome-extension://, data:)
+  // Abaikan non-http
   if (!url.protocol.startsWith('http')) return;
 
-  // Ignore Webpack Hot Module Reloading (HMR) requests in development
-  if (url.pathname.includes('/_next/webpack-hmr') || url.pathname.includes('/api/')) return;
+  // Abaikan HMR, API calls, Next.js internals — biarkan ke network
+  if (
+    url.pathname.includes('/_next/webpack-hmr') ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/_next/') ||
+    url.search.includes('_rsc')
+  ) return;
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
+  // Untuk request navigasi (pindah halaman) — SELALU network first, jangan cache
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        // Offline fallback: kembalikan halaman utama dari cache jika ada
+        return caches.match('/') || new Response(
+          '<html><body><h2>Sedang offline. Mohon periksa koneksi internet Anda.</h2></body></html>',
+          { headers: { 'Content-Type': 'text/html' } }
+        );
+      })
+    );
+    return;
+  }
 
-      return fetch(event.request)
-        .then((networkResponse) => {
-          return networkResponse;
-        })
-        .catch(async () => {
-          if (event.request.mode === 'navigate') {
-            const cache = await caches.open(CACHE_NAME);
-            const fallback = await cache.match('/');
-            if (fallback) return fallback;
-          }
-          return new Response('Network error occurred', {
-            status: 408,
-            headers: { 'Content-Type': 'text/plain' },
-          });
+  // Untuk static assets (icon, manifest, dll) — cache first
+  if (STATIC_ASSETS.some(asset => url.pathname === asset)) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        return cached || fetch(event.request).then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return response;
         });
-    })
-  );
+      })
+    );
+    return;
+  }
+
+  // Semua request lain — network only (tidak di-cache)
+  event.respondWith(fetch(event.request));
 });

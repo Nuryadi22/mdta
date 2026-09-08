@@ -11,31 +11,30 @@ export interface Santri {
   noHp: string;
 }
 
-export const DEFAULT_SANTRI_LIST: Santri[] = [
-  { id: 1, nama: 'Ahmad Rizky', tempatLahir: 'Padang', tanggalLahir: '2012-05-14', jenisKelamin: 'LAKIKLAKI', noHp: '081234567890' },
-  { id: 2, nama: 'Siti Nurhaliza', tempatLahir: 'Bukittinggi', tanggalLahir: '2013-08-22', jenisKelamin: 'PEREMPUAN', noHp: '082198765432' },
-  { id: 3, nama: 'Muhammad Bima', tempatLahir: 'Solok', tanggalLahir: '2012-11-03', jenisKelamin: 'LAKIKLAKI', noHp: '085211223344' },
-  { id: 4, nama: 'Aisyah Putri', tempatLahir: 'Payakumbuh', tanggalLahir: '2013-02-17', jenisKelamin: 'PEREMPUAN', noHp: '081377889900' },
-  { id: 5, nama: 'Zahra Amelia', tempatLahir: 'Padang Panjang', tanggalLahir: '2012-09-09', jenisKelamin: 'PEREMPUAN', noHp: '085366778899' },
-];
+export const DEFAULT_SANTRI_LIST: Santri[] = [];
 
 const STORAGE_KEY = 'mdta_santri_list_v1';
+const STORAGE_KEY_OLD = 'mdta_santri_list_v1'; // same key, clear old dummy data
 const EVENT_NAME = 'mdta_santri_updated';
 
 export function getSantriList(): Santri[] {
-  if (typeof window === 'undefined') return DEFAULT_SANTRI_LIST;
+  if (typeof window === 'undefined') return [];
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     if (data) {
-      return JSON.parse(data);
-    } else {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_SANTRI_LIST));
-      return DEFAULT_SANTRI_LIST;
+      const parsed: Santri[] = JSON.parse(data);
+      // Reset if it contains old dummy data (Ahmad Rizky)
+      if (parsed.length > 0 && parsed[0].nama === 'Ahmad Rizky') {
+        localStorage.removeItem(STORAGE_KEY);
+        return [];
+      }
+      return parsed;
     }
+    return [];
   } catch (e) {
     console.error('Failed to read santri list from localStorage', e);
   }
-  return DEFAULT_SANTRI_LIST;
+  return [];
 }
 
 export function saveSantriList(list: Santri[]) {
@@ -49,7 +48,7 @@ export function saveSantriList(list: Santri[]) {
 }
 
 export function useSantri() {
-  const [santriList, setSantriList] = useState<Santri[]>(DEFAULT_SANTRI_LIST);
+  const [santriList, setSantriList] = useState<Santri[]>([]);
 
   useEffect(() => {
     setSantriList(getSantriList());
