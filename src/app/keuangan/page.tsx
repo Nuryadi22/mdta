@@ -10,7 +10,9 @@ import {
   Receipt,
   History,
   CalendarDays,
-  Banknote
+  Banknote,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { useSantri } from '@/app/lib/santri';
 
@@ -57,6 +59,7 @@ export default function KeuanganPage() {
   const [isPemasukanModalOpen, setIsPemasukanModalOpen] = useState(false);
   const [isSetorModalOpen, setIsSetorModalOpen] = useState(false);
   const [selectedSantriDetail, setSelectedSantriDetail] = useState<SantriFinancial | null>(null);
+  const [editingFee, setEditingFee] = useState<FeeCategory | null>(null);
 
   // Setor Kas history state
   const [setorHistory, setSetorHistory] = useState<SetorRecord[]>([]);
@@ -148,7 +151,7 @@ export default function KeuanganPage() {
     }
   };
 
-  // 1. Submit Pengaturan Tagihan Biaya
+  // 1. Submit Pengaturan Tagihan Biaya (Tambah)
   const handleAddFeeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFee.nama || !newFee.nominal) return;
@@ -171,6 +174,47 @@ export default function KeuanganPage() {
     saveStateToStorage(saldoDiTangan, updatedFees, updatedFinances, setorHistory);
     setNewFee({ nama: '', nominal: '', keterangan: '' });
     setIsTagihanModalOpen(false);
+  };
+
+  // 1b. Submit Edit Tagihan
+  const handleEditFeeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingFee) return;
+    const oldNominal = feeCategories.find((f) => f.id === editingFee.id)?.nominal || 0;
+    const diff = editingFee.nominal - oldNominal;
+
+    const updatedFees = feeCategories.map((f) =>
+      f.id === editingFee.id ? { ...editingFee } : f
+    );
+    setFeeCategories(updatedFees);
+
+    // Sesuaikan totalTanggungan semua santri dengan selisih nominal
+    const updatedFinances = santriFinances.map((s) => ({
+      ...s,
+      totalTanggungan: Math.max(0, s.totalTanggungan + diff),
+    }));
+    setSantriFinances(updatedFinances);
+
+    saveStateToStorage(saldoDiTangan, updatedFees, updatedFinances, setorHistory);
+    setEditingFee(null);
+  };
+
+  // 1c. Hapus Tagihan
+  const handleDeleteFee = (feeId: number) => {
+    const feeToDelete = feeCategories.find((f) => f.id === feeId);
+    if (!feeToDelete) return;
+
+    const updatedFees = feeCategories.filter((f) => f.id !== feeId);
+    setFeeCategories(updatedFees);
+
+    // Kurangi totalTanggungan semua santri
+    const updatedFinances = santriFinances.map((s) => ({
+      ...s,
+      totalTanggungan: Math.max(0, s.totalTanggungan - feeToDelete.nominal),
+    }));
+    setSantriFinances(updatedFinances);
+
+    saveStateToStorage(saldoDiTangan, updatedFees, updatedFinances, setorHistory);
   };
 
   // 2. Submit Input Pemasukan Pembayaran
@@ -299,14 +343,45 @@ export default function KeuanganPage() {
           </div>
           <span className="text-[10px] text-slate-500 font-semibold">{feeCategories.length} Jenis</span>
         </div>
-        <div className="grid grid-cols-2 gap-2 pt-1">
-          {feeCategories.map((cat) => (
-            <div key={cat.id} className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs">
-              <span className="font-bold text-slate-800 block truncate">{cat.nama}</span>
-              <span className="text-sky-700 font-extrabold">{formatRupiah(cat.nominal)}</span>
-            </div>
-          ))}
-        </div>
+        {feeCategories.length === 0 ? (
+          <div className="py-4 text-center">
+            <p className="text-xs text-slate-400 italic">Belum ada tagihan. Klik &ldquo;Atur Tagihan&rdquo; untuk menambahkan.</p>
+          </div>
+        ) : (
+          <div className="space-y-2 pt-1">
+            {feeCategories.map((cat) => (
+              <div key={cat.id} className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <span className="font-bold text-slate-800 block truncate">{cat.nama}</span>
+                  <span className="text-sky-700 font-extrabold">{formatRupiah(cat.nominal)}</span>
+                  {cat.keterangan ? (
+                    <span className="text-slate-400 block text-[10px] truncate mt-0.5">{cat.keterangan}</span>
+                  ) : null}
+                </div>
+                <div className="flex items-center space-x-1.5 ml-2 flex-shrink-0">
+                  <button
+                    onClick={() => setEditingFee({ ...cat })}
+                    className="w-7 h-7 bg-amber-50 border border-amber-200 text-amber-600 rounded-md flex items-center justify-center hover:bg-amber-100 transition-colors"
+                    title="Edit tagihan"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Hapus tagihan "${cat.nama}"? Ini akan mengurangi tanggungan semua santri sebesar ${formatRupiah(cat.nominal)}.`)) {
+                        handleDeleteFee(cat.id);
+                      }
+                    }}
+                    className="w-7 h-7 bg-rose-50 border border-rose-200 text-rose-600 rounded-md flex items-center justify-center hover:bg-rose-100 transition-colors"
+                    title="Hapus tagihan"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Section: Rekapan Status Keuangan Per Santri */}
@@ -493,6 +568,69 @@ export default function KeuanganPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal 1b: Edit Tagihan */}
+      <Modal
+        isOpen={!!editingFee}
+        onClose={() => setEditingFee(null)}
+        title="Edit Jenis Tagihan"
+      >
+        {editingFee && (
+          <form onSubmit={handleEditFeeSubmit} className="space-y-3 text-xs">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Nama Jenis Biaya</label>
+              <input
+                type="text"
+                required
+                placeholder="Contoh: SPP Bulanan, Biaya Ujian"
+                value={editingFee.nama}
+                onChange={(e) => setEditingFee({ ...editingFee, nama: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Nominal (Rp)</label>
+              <input
+                type="number"
+                required
+                placeholder="100000"
+                value={editingFee.nominal}
+                onChange={(e) => setEditingFee({ ...editingFee, nominal: parseFloat(e.target.value) || 0 })}
+                className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                * Perubahan nominal akan otomatis menyesuaikan total tanggungan semua santri.
+              </p>
+            </div>
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Keterangan</label>
+              <input
+                type="text"
+                placeholder="Keterangan tambahan..."
+                value={editingFee.keterangan}
+                onChange={(e) => setEditingFee({ ...editingFee, keterangan: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingFee(null)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-4 py-2 rounded-lg"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-2 rounded-lg"
+              >
+                Simpan Perubahan
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Modal 2: Input Pemasukan Pembayaran (Populasi Nama Siswa) */}
