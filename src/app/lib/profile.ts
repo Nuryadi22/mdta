@@ -8,8 +8,8 @@ export interface ProfileData {
 }
 
 const DEFAULT_PROFILE: ProfileData = {
-  namaUstadz: 'Ustadz Ahmad Farhan, S.Pd.I',
-  namaMdta: 'MDTA Al-Hikmah',
+  namaUstadz: '',
+  namaMdta: '',
 };
 
 const STORAGE_KEY = 'mdta_profile_data';
@@ -20,7 +20,13 @@ export function getProfile(): ProfileData {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     if (data) {
-      return JSON.parse(data);
+      const parsed: ProfileData = JSON.parse(data);
+      // Reset jika masih berisi data dummy lama
+      if (parsed.namaUstadz === 'Ustadz Ahmad Farhan, S.Pd.I') {
+        localStorage.removeItem(STORAGE_KEY);
+        return DEFAULT_PROFILE;
+      }
+      return parsed;
     }
   } catch (e) {
     console.error('Failed to read profile', e);

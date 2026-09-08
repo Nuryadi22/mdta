@@ -39,51 +39,20 @@ interface SantriAttendanceItem {
   keterangan?: string;
 }
 
-const INITIAL_RECORDS: DailyAttendanceRecord[] = [
-  // 2026-09-07
-  { id: '2026-09-07_1', date: '2026-09-07', santriId: 1, santriNama: 'Ahmad Rizky', status: 'HADIR' },
-  { id: '2026-09-07_2', date: '2026-09-07', santriId: 2, santriNama: 'Siti Nurhaliza', status: 'HADIR' },
-  { id: '2026-09-07_3', date: '2026-09-07', santriId: 3, santriNama: 'Muhammad Bima', status: 'SAKIT', keterangan: 'Demam tinggi' },
-  { id: '2026-09-07_4', date: '2026-09-07', santriId: 4, santriNama: 'Aisyah Putri', status: 'IZIN', keterangan: 'Acara keluarga' },
-  { id: '2026-09-07_5', date: '2026-09-07', santriId: 5, santriNama: 'Zahra Amelia', status: 'HADIR' },
-  // 2026-09-06
-  { id: '2026-09-06_1', date: '2026-09-06', santriId: 1, santriNama: 'Ahmad Rizky', status: 'HADIR' },
-  { id: '2026-09-06_2', date: '2026-09-06', santriId: 2, santriNama: 'Siti Nurhaliza', status: 'HADIR' },
-  { id: '2026-09-06_3', date: '2026-09-06', santriId: 3, santriNama: 'Muhammad Bima', status: 'HADIR' },
-  { id: '2026-09-06_4', date: '2026-09-06', santriId: 4, santriNama: 'Aisyah Putri', status: 'HADIR' },
-  { id: '2026-09-06_5', date: '2026-09-06', santriId: 5, santriNama: 'Zahra Amelia', status: 'ALPA', keterangan: 'Tanpa keterangan' },
-  // 2026-09-05
-  { id: '2026-09-05_1', date: '2026-09-05', santriId: 1, santriNama: 'Ahmad Rizky', status: 'HADIR' },
-  { id: '2026-09-05_2', date: '2026-09-05', santriId: 2, santriNama: 'Siti Nurhaliza', status: 'IZIN', keterangan: 'Izin berobat' },
-  { id: '2026-09-05_3', date: '2026-09-05', santriId: 3, santriNama: 'Muhammad Bima', status: 'HADIR' },
-  { id: '2026-09-05_4', date: '2026-09-05', santriId: 4, santriNama: 'Aisyah Putri', status: 'HADIR' },
-  { id: '2026-09-05_5', date: '2026-09-05', santriId: 5, santriNama: 'Zahra Amelia', status: 'HADIR' },
-  // 2026-09-04
-  { id: '2026-09-04_1', date: '2026-09-04', santriId: 1, santriNama: 'Ahmad Rizky', status: 'HADIR' },
-  { id: '2026-09-04_2', date: '2026-09-04', santriId: 2, santriNama: 'Siti Nurhaliza', status: 'HADIR' },
-  { id: '2026-09-04_3', date: '2026-09-04', santriId: 3, santriNama: 'Muhammad Bima', status: 'HADIR' },
-  { id: '2026-09-04_4', date: '2026-09-04', santriId: 4, santriNama: 'Aisyah Putri', status: 'HADIR' },
-  { id: '2026-09-04_5', date: '2026-09-04', santriId: 5, santriNama: 'Zahra Amelia', status: 'HADIR' },
-  // 2026-09-03
-  { id: '2026-09-03_1', date: '2026-09-03', santriId: 1, santriNama: 'Ahmad Rizky', status: 'SAKIT', keterangan: 'Flu dan batuk' },
-  { id: '2026-09-03_2', date: '2026-09-03', santriId: 2, santriNama: 'Siti Nurhaliza', status: 'HADIR' },
-  { id: '2026-09-03_3', date: '2026-09-03', santriId: 3, santriNama: 'Muhammad Bima', status: 'HADIR' },
-  { id: '2026-09-03_4', date: '2026-09-03', santriId: 4, santriNama: 'Aisyah Putri', status: 'HADIR' },
-  { id: '2026-09-03_5', date: '2026-09-03', santriId: 5, santriNama: 'Zahra Amelia', status: 'HADIR' },
-];
+const INITIAL_RECORDS: DailyAttendanceRecord[] = [];
 
-const LOCAL_STORAGE_KEY = 'mdta_attendance_records_v1';
+const LOCAL_STORAGE_KEY = 'mdta_attendance_records_v2'; // v2 = fresh start, clear v1 dummy
 
 export default function PresensiPage() {
   const { santriList } = useSantri();
   const [activeTab, setActiveTab] = useState<'INPUT' | 'REKAP'>('INPUT');
-  const [selectedDate, setSelectedDate] = useState('2026-09-07');
-  const [selectedMonth, setSelectedMonth] = useState('2026-09'); // YYYY-MM
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [isSavedDraft, setIsSavedDraft] = useState(false);
   const [isFinalCommitted, setIsFinalCommitted] = useState(false);
 
   // All stored daily attendance records
-  const [allRecords, setAllRecords] = useState<DailyAttendanceRecord[]>(INITIAL_RECORDS);
+  const [allRecords, setAllRecords] = useState<DailyAttendanceRecord[]>([]);
 
   // Current date input list
   const [attendanceList, setAttendanceList] = useState<SantriAttendanceItem[]>([]);
@@ -95,6 +64,9 @@ export default function PresensiPage() {
   // Load from localStorage on client side
   useEffect(() => {
     try {
+      // Hapus cache lama v1 yang berisi data dummy
+      localStorage.removeItem('mdta_attendance_records_v1');
+
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         setAllRecords(JSON.parse(saved));

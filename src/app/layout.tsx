@@ -3,6 +3,7 @@ import './globals.css';
 import Header from '@/components/Header';
 import BottomNav from '@/components/BottomNav';
 import Script from 'next/script';
+import SplashScreen from '@/components/SplashScreen';
 
 export const metadata: Metadata = {
   title: 'Aplikasi MDTA - Sistem Informasi Madrasah Diniyah',
@@ -39,6 +40,8 @@ export default function RootLayout({
   return (
     <html lang="id" className="h-full antialiased bg-slate-100">
       <body className="min-h-full font-sans bg-slate-100 text-slate-900 selection:bg-sky-200 selection:text-sky-900">
+        {/* PWA Splash: hanya muncul sekali saat pertama buka dari home screen */}
+        <SplashScreen mode="pwa" />
         <div className="max-w-md mx-auto min-h-screen bg-white shadow-xl flex flex-col relative pb-20 border-x border-slate-200">
           <Header />
           <main className="flex-1 px-4 py-5 overflow-y-auto">

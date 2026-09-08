@@ -11,7 +11,7 @@ export default function LoginPage() {
 
   return (
     <>
-      <SplashScreen />
+      <SplashScreen mode="login" />
       <div className="min-h-[85vh] flex flex-col justify-center py-6 px-2">
       <div className="bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden max-w-sm mx-auto w-full">
         {/* Header Branding (Sky Blue Solid) */}

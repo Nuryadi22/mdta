@@ -2,28 +2,41 @@
 
 import { useEffect, useState } from 'react';
 
-export default function SplashScreen() {
+interface SplashScreenProps {
+  /** 
+   * 'login'  → selalu tampil setiap kali halaman login dibuka (tiap session baru)
+   * 'pwa'    → hanya tampil sekali saat PWA pertama dibuka (pakai sessionStorage)
+   */
+  mode?: 'login' | 'pwa';
+}
+
+export default function SplashScreen({ mode = 'pwa' }: SplashScreenProps) {
   const [visible, setVisible] = useState(false);
   const [hiding, setHiding] = useState(false);
 
   useEffect(() => {
-    // Hanya tampilkan jika belum pernah muncul di session ini
-    const alreadyShown = sessionStorage.getItem('mdta_splash_shown');
-    if (alreadyShown) return;
+    if (mode === 'pwa') {
+      // Hanya muncul sekali per session saat membuka PWA (mode standalone)
+      const alreadyShown = sessionStorage.getItem('mdta_pwa_splash_shown');
+      const isStandalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        (navigator as Navigator & { standalone?: boolean }).standalone === true;
 
+      if (alreadyShown || !isStandalone) return;
+      sessionStorage.setItem('mdta_pwa_splash_shown', '1');
+    }
+
+    // Tampilkan splash
     setVisible(true);
-    sessionStorage.setItem('mdta_splash_shown', '1');
 
-    // Mulai fade-out setelah 1.8 detik
     const hideTimer = setTimeout(() => {
       setHiding(true);
-      // Hilangkan dari DOM setelah transisi selesai
       const removeTimer = setTimeout(() => setVisible(false), 500);
       return () => clearTimeout(removeTimer);
-    }, 1800);
+    }, 2000);
 
     return () => clearTimeout(hideTimer);
-  }, []);
+  }, [mode]);
 
   if (!visible) return null;
 
