@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Users, UserCheck, Clock, AlertTriangle, XCircle, Fingerprint, Wallet, UserPlus } from 'lucide-react';
+import { Users, UserCheck, Clock, AlertTriangle, XCircle, Fingerprint, Wallet, UserPlus, Eye, EyeOff } from 'lucide-react';
 import { useProfile } from '@/app/lib/profile';
 import { useSantri } from '@/app/lib/santri';
 import { getTodayAttendanceStats } from '@/app/actions/presensi';
@@ -18,6 +18,7 @@ export default function BerandaPage() {
     alpa: 0,
   });
   const [saldoDiTangan, setSaldoDiTangan] = useState(0);
+  const [isSaldoVisible, setIsSaldoVisible] = useState(true);
 
   useEffect(() => {
     getTodayAttendanceStats().then((data) => {
@@ -26,7 +27,20 @@ export default function BerandaPage() {
     getSaldoDiTangan().then((saldo) => {
       setSaldoDiTangan(saldo);
     });
+
+    const savedVisibility = localStorage.getItem('beranda-saldo-visible');
+    if (savedVisibility !== null) {
+      setIsSaldoVisible(savedVisibility === 'true');
+    }
   }, []);
+
+  const toggleSaldoVisibility = () => {
+    setIsSaldoVisible((prev) => {
+      const next = !prev;
+      localStorage.setItem('beranda-saldo-visible', String(next));
+      return next;
+    });
+  };
 
   const formatRupiah = (val: number) =>
     new Intl.NumberFormat('id-ID', {
@@ -82,7 +96,20 @@ export default function BerandaPage() {
             Kelola Kas
           </Link>
         </div>
-        <h2 className="text-2xl font-extrabold tracking-tight">{formatRupiah(saldoDiTangan)}</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-extrabold tracking-tight">
+            {isSaldoVisible ? formatRupiah(saldoDiTangan) : 'Rp •••••••'}
+          </h2>
+          <button
+            type="button"
+            onClick={toggleSaldoVisibility}
+            className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors"
+            aria-label={isSaldoVisible ? 'Sembunyikan saldo' : 'Tampilkan saldo'}
+            title={isSaldoVisible ? 'Sembunyikan saldo' : 'Tampilkan saldo'}
+          >
+            {isSaldoVisible ? <EyeOff className="w-4 h-4 text-white" /> : <Eye className="w-4 h-4 text-white" />}
+          </button>
+        </div>
         <p className="text-[11px] text-emerald-100">
           Kas tunai yang masih dipegang dari pembayaran santri, belum disetorkan.
         </p>
