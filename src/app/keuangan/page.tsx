@@ -36,10 +36,7 @@ interface SantriFinancial {
   riwayat: { tanggal: string; nominal: number; jenis: string }[];
 }
 
-const DEFAULT_FEES: FeeCategory[] = [
-  { id: 1, nama: 'SPP Bulanan September', nominal: 100000, keterangan: 'Iuran wajib bulanan santri' },
-  { id: 2, nama: 'Biaya Ujian & Kitab', nominal: 50000, keterangan: 'Perlengkapan belajar santri' },
-];
+const DEFAULT_FEES: FeeCategory[] = [];
 
 const LOCAL_STORAGE_KEUANGAN_KEY = 'mdta_keuangan_state_v1';
 
@@ -68,9 +65,9 @@ export default function KeuanganPage() {
   const [newFee, setNewFee] = useState({ nama: '', nominal: '', keterangan: '' });
   const [newPayment, setNewPayment] = useState({
     santriId: '',
-    tanggal: '2026-09-07',
+    tanggal: new Date().toISOString().split('T')[0],
     nominal: '',
-    jenis: 'SPP Bulanan September',
+    jenis: '',
   });
   const [setorForm, setSetorForm] = useState({
     tanggal: new Date().toISOString().split('T')[0],
@@ -84,6 +81,15 @@ export default function KeuanganPage() {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEUANGAN_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        // Clean up old demo mock data if detected
+        if (parsed.feeCategories && parsed.feeCategories.some((f: FeeCategory) => f.nama === 'SPP Bulanan September')) {
+          localStorage.removeItem(LOCAL_STORAGE_KEUANGAN_KEY);
+          setFeeCategories([]);
+          setSantriFinances([]);
+          setSaldoDiTangan(0);
+          setSetorHistory([]);
+          return;
+        }
         if (parsed.saldoDiTangan !== undefined) setSaldoDiTangan(parsed.saldoDiTangan);
         if (parsed.feeCategories) setFeeCategories(parsed.feeCategories);
         if (parsed.santriFinances) setSantriFinances(parsed.santriFinances);
@@ -106,7 +112,7 @@ export default function KeuanganPage() {
           return {
             id: santri.id,
             nama: santri.nama,
-            totalTanggungan: 150000,
+            totalTanggungan: feeCategories.reduce((sum, f) => sum + f.nominal, 0),
             totalDibayar: 0,
             riwayat: [],
           };
@@ -118,7 +124,7 @@ export default function KeuanganPage() {
         setNewPayment((prev) => ({ ...prev, santriId: String(santriList[0].id) }));
       }
     }
-  }, [santriList]);
+  }, [santriList, feeCategories]);
 
   // Helper to save state to localStorage
   const saveStateToStorage = (
