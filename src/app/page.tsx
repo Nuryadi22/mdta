@@ -6,6 +6,7 @@ import { Users, UserCheck, Clock, AlertTriangle, XCircle, Fingerprint, Wallet, U
 import { useProfile } from '@/app/lib/profile';
 import { useSantri } from '@/app/lib/santri';
 import { getTodayAttendanceStats } from '@/app/actions/presensi';
+import { getSaldoDiTangan } from '@/app/actions/keuangan';
 
 export default function BerandaPage() {
   const { profile } = useProfile();
@@ -16,12 +17,23 @@ export default function BerandaPage() {
     sakit: 0,
     alpa: 0,
   });
+  const [saldoDiTangan, setSaldoDiTangan] = useState(0);
 
   useEffect(() => {
     getTodayAttendanceStats().then((data) => {
       setTodayAttendance(data);
     });
+    getSaldoDiTangan().then((saldo) => {
+      setSaldoDiTangan(saldo);
+    });
   }, []);
+
+  const formatRupiah = (val: number) =>
+    new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      maximumFractionDigits: 0,
+    }).format(val);
 
   // Summary data synced with state
   const stats = {
@@ -52,6 +64,28 @@ export default function BerandaPage() {
             className="w-12 h-12 object-cover rounded-full bg-white p-1 shadow-md border-2 border-white/60"
           />
         </div>
+      </div>
+
+      {/* Saldo Uang di Tangan */}
+      <div className="bg-emerald-600 text-white rounded-xl p-4 shadow-sm border border-emerald-700 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+              <Wallet className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-xs font-semibold text-emerald-100">Saldo Uang di Tangan</span>
+          </div>
+          <Link
+            href="/keuangan"
+            className="text-[10px] font-bold bg-white text-emerald-700 px-2 py-0.5 rounded-full uppercase hover:bg-emerald-50"
+          >
+            Kelola Kas
+          </Link>
+        </div>
+        <h2 className="text-2xl font-extrabold tracking-tight">{formatRupiah(saldoDiTangan)}</h2>
+        <p className="text-[11px] text-emerald-100">
+          Kas tunai yang masih dipegang dari pembayaran santri, belum disetorkan.
+        </p>
       </div>
 
       {/* Main Stat Card: Total Santri */}

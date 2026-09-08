@@ -273,6 +273,7 @@ export async function addPayment(data: {
     );
 
     revalidatePath('/keuangan');
+    revalidatePath('/');
     return { success: true };
   } catch (error) {
     console.error('Error adding payment:', error);
@@ -301,9 +302,28 @@ export async function addCashHandout(data: {
     );
 
     revalidatePath('/keuangan');
+    revalidatePath('/');
     return { success: true };
   } catch (error) {
     console.error('Error adding cash handout:', error);
     return { success: false, error: 'Gagal mencatat setoran kas di database' };
+  }
+}
+
+export async function getSaldoDiTangan(): Promise<number> {
+  try {
+    const [incomeRows] = await db.query<RowDataPacket[]>(
+      'SELECT CAST(COALESCE(SUM(amount), 0) AS DOUBLE) AS total FROM payments'
+    );
+    const [handoutRows] = await db.query<RowDataPacket[]>(
+      'SELECT CAST(COALESCE(SUM(amount), 0) AS DOUBLE) AS total FROM cash_handouts'
+    );
+
+    const totalIncome = Number(incomeRows[0]?.total ?? 0);
+    const totalHandouts = Number(handoutRows[0]?.total ?? 0);
+    return Math.max(0, totalIncome - totalHandouts);
+  } catch (error) {
+    console.error('Error getting saldo di tangan:', error);
+    return 0;
   }
 }
