@@ -1,70 +1,69 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  getSantriList as fetchSantriListServer,
+  addSantri as addSantriServer,
+  updateSantri as updateSantriServer,
+  deleteSantri as deleteSantriServer,
+  Santri,
+} from '@/app/actions/santri';
 
-export interface Santri {
-  id: number;
-  nama: string;
-  tempatLahir: string;
-  tanggalLahir: string;
-  jenisKelamin: 'LAKIKLAKI' | 'PEREMPUAN';
-  noHp: string;
-}
-
-export const DEFAULT_SANTRI_LIST: Santri[] = [];
-
-const STORAGE_KEY = 'mdta_santri_list_v1';
-const STORAGE_KEY_OLD = 'mdta_santri_list_v1'; // same key, clear old dummy data
-const EVENT_NAME = 'mdta_santri_updated';
-
-export function getSantriList(): Santri[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (data) {
-      const parsed: Santri[] = JSON.parse(data);
-      // Reset if it contains old dummy data (Ahmad Rizky)
-      if (parsed.length > 0 && parsed[0].nama === 'Ahmad Rizky') {
-        localStorage.removeItem(STORAGE_KEY);
-        return [];
-      }
-      return parsed;
-    }
-    return [];
-  } catch (e) {
-    console.error('Failed to read santri list from localStorage', e);
-  }
-  return [];
-}
-
-export function saveSantriList(list: Santri[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-    window.dispatchEvent(new Event(EVENT_NAME));
-  } catch (e) {
-    console.error('Failed to save santri list to localStorage', e);
-  }
-}
+export type { Santri };
 
 export function useSantri() {
   const [santriList, setSantriList] = useState<Santri[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    setSantriList(getSantriList());
-
-    const handleUpdate = () => {
-      setSantriList(getSantriList());
-    };
-
-    window.addEventListener(EVENT_NAME, handleUpdate);
-    window.addEventListener('storage', handleUpdate);
-
-    return () => {
-      window.removeEventListener(EVENT_NAME, handleUpdate);
-      window.removeEventListener('storage', handleUpdate);
-    };
+  const loadSantri = useCallback(async () => {
+    try {
+      const data = await fetchSantriListServer();
+      setSantriList(data);
+    } catch (err) {
+      console.error('Failed to load santri from database', err);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  return { santriList, updateSantriList: saveSantriList };
+  useEffect(() => {
+    loadSantri();
+  }, [loadSantri]);
+
+  const addSantri = async (data: Omit<Santri, 'id'>) => {
+    const res = await addSantriServer(data);
+    if (res.success && res.data) {
+      setSantriList((prev) => [...prev, res.data!].sort((a, b) => a.nama.localeCompare(b.nama)));
+    }
+    return res;
+  };
+
+  const updateSantri = async (id: number, data: Omit<Santri, 'id'>) => {
+    const res = await updateSantriServer(id, data);
+    if (res.success) {
+      setSantriList((prev) =>
+        prev
+          .map((s) => (s.id === id ? { ...s, ...data } : s))
+          .sort((a, b) => a.nama.localeCompare(b.nama))
+      );
+    }
+    return res;
+  };
+
+  const deleteSantri = async (id: number) => {
+    const res = await deleteSantriServer(id);
+    if (res.success) {
+      setSantriList((prev) => prev.filter((s) => s.id !== id));
+    }
+    return res;
+  };
+
+  return {
+    santriList,
+    isLoading,
+    refreshSantri: loadSantri,
+    addSantri,
+    updateSantri,
+    deleteSantri,
+  };
 }

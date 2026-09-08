@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Modal from '@/components/Modal';
 import {
   Wallet,
@@ -15,44 +15,28 @@ import {
   Trash2
 } from 'lucide-react';
 import { useSantri } from '@/app/lib/santri';
-
-interface FeeCategory {
-  id: number;
-  nama: string;
-  nominal: number;
-  keterangan: string;
-}
-
-interface SetorRecord {
-  id: number;
-  tanggal: string;
-  nominal: number;
-  keterangan: string;
-}
-
-interface SantriFinancial {
-  id: number;
-  nama: string;
-  totalTanggungan: number;
-  totalDibayar: number;
-  riwayat: { tanggal: string; nominal: number; jenis: string }[];
-}
-
-const DEFAULT_FEES: FeeCategory[] = [];
-
-const LOCAL_STORAGE_KEUANGAN_KEY = 'mdta_keuangan_state_v1';
+import {
+  getKeuanganOverview,
+  addFeeCategory,
+  updateFeeCategory,
+  deleteFeeCategory,
+  addPayment,
+  addCashHandout,
+  FeeCategory,
+  SetorRecord,
+  SantriFinancial,
+} from '@/app/actions/keuangan';
 
 export default function KeuanganPage() {
   const { santriList } = useSantri();
 
-  // Financial State
+  // Financial State from MySQL
   const [saldoDiTangan, setSaldoDiTangan] = useState<number>(0);
-
-  // Fee categories state
-  const [feeCategories, setFeeCategories] = useState<FeeCategory[]>(DEFAULT_FEES);
-
-  // Student summary state
+  const [feeCategories, setFeeCategories] = useState<FeeCategory[]>([]);
   const [santriFinances, setSantriFinances] = useState<SantriFinancial[]>([]);
+  const [setorHistory, setSetorHistory] = useState<SetorRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Modals state
   const [isTagihanModalOpen, setIsTagihanModalOpen] = useState(false);
@@ -60,9 +44,6 @@ export default function KeuanganPage() {
   const [isSetorModalOpen, setIsSetorModalOpen] = useState(false);
   const [selectedSantriDetail, setSelectedSantriDetail] = useState<SantriFinancial | null>(null);
   const [editingFee, setEditingFee] = useState<FeeCategory | null>(null);
-
-  // Setor Kas history state
-  const [setorHistory, setSetorHistory] = useState<SetorRecord[]>([]);
 
   // Forms state
   const [newFee, setNewFee] = useState({ nama: '', nominal: '', keterangan: '' });
@@ -78,205 +59,145 @@ export default function KeuanganPage() {
     keterangan: '',
   });
 
-  // Load state from localStorage on mount
-  useEffect(() => {
+  // Load state from DB
+  const loadOverview = useCallback(async () => {
     try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEUANGAN_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Clean up old demo mock data if detected
-        if (parsed.feeCategories && parsed.feeCategories.some((f: FeeCategory) => f.nama === 'SPP Bulanan September')) {
-          localStorage.removeItem(LOCAL_STORAGE_KEUANGAN_KEY);
-          setFeeCategories([]);
-          setSantriFinances([]);
-          setSaldoDiTangan(0);
-          setSetorHistory([]);
-          return;
-        }
-        if (parsed.saldoDiTangan !== undefined) setSaldoDiTangan(parsed.saldoDiTangan);
-        if (parsed.feeCategories) setFeeCategories(parsed.feeCategories);
-        if (parsed.santriFinances) setSantriFinances(parsed.santriFinances);
-        if (parsed.setorHistory) setSetorHistory(parsed.setorHistory);
-      }
+      const data = await getKeuanganOverview();
+      setSaldoDiTangan(data.saldoDiTangan);
+      setFeeCategories(data.feeCategories);
+      setSantriFinances(data.santriFinances);
+      setSetorHistory(data.setorHistory);
     } catch (e) {
-      console.error('Failed to load financial state from localStorage', e);
+      console.error('Failed to load financial state from database', e);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-  // Sync santriFinances with santriList dynamically
   useEffect(() => {
-    if (santriList.length > 0) {
-      setSantriFinances((prev) => {
-        return santriList.map((santri) => {
-          const existing = prev.find((s) => s.id === santri.id);
-          if (existing) {
-            return { ...existing, nama: santri.nama };
-          }
-          return {
-            id: santri.id,
-            nama: santri.nama,
-            totalTanggungan: feeCategories.reduce((sum, f) => sum + f.nominal, 0),
-            totalDibayar: 0,
-            riwayat: [],
-          };
-        });
-      });
+    loadOverview();
+  }, [loadOverview, santriList]);
 
-      // Default selected santri in payment form if not selected yet
-      if (!newPayment.santriId && santriList[0]) {
-        setNewPayment((prev) => ({ ...prev, santriId: String(santriList[0].id) }));
-      }
+  // Set default santri & payment type when opening modal or when data loads
+  useEffect(() => {
+    if (santriList.length > 0 && !newPayment.santriId) {
+      setNewPayment((prev) => ({
+        ...prev,
+        santriId: String(santriList[0].id),
+        jenis: feeCategories[0]?.nama || 'SPP Bulanan',
+      }));
     }
-  }, [santriList, feeCategories]);
-
-  // Helper to save state to localStorage
-  const saveStateToStorage = (
-    saldo: number,
-    fees: FeeCategory[],
-    finances: SantriFinancial[],
-    setors: SetorRecord[]
-  ) => {
-    try {
-      localStorage.setItem(
-        LOCAL_STORAGE_KEUANGAN_KEY,
-        JSON.stringify({
-          saldoDiTangan: saldo,
-          feeCategories: fees,
-          santriFinances: finances,
-          setorHistory: setors,
-        })
-      );
-    } catch (e) {
-      console.error('Failed to save financial state to localStorage', e);
-    }
-  };
+  }, [santriList, feeCategories, newPayment.santriId]);
 
   // 1. Submit Pengaturan Tagihan Biaya (Tambah)
-  const handleAddFeeSubmit = (e: React.FormEvent) => {
+  const handleAddFeeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFee.nama || !newFee.nominal) return;
-    const feeItem: FeeCategory = {
-      id: Date.now(),
-      nama: newFee.nama,
-      nominal: parseFloat(newFee.nominal),
-      keterangan: newFee.keterangan,
-    };
-    const updatedFees = [...feeCategories, feeItem];
-    setFeeCategories(updatedFees);
 
-    // Update totalTanggungan for all santri
-    const updatedFinances = santriFinances.map((s) => ({
-      ...s,
-      totalTanggungan: s.totalTanggungan + feeItem.nominal,
-    }));
-    setSantriFinances(updatedFinances);
-
-    saveStateToStorage(saldoDiTangan, updatedFees, updatedFinances, setorHistory);
-    setNewFee({ nama: '', nominal: '', keterangan: '' });
-    setIsTagihanModalOpen(false);
+    setIsSubmitting(true);
+    try {
+      await addFeeCategory({
+        nama: newFee.nama,
+        nominal: parseFloat(newFee.nominal),
+        keterangan: newFee.keterangan,
+      });
+      await loadOverview();
+      setNewFee({ nama: '', nominal: '', keterangan: '' });
+      setIsTagihanModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 1b. Submit Edit Tagihan
-  const handleEditFeeSubmit = (e: React.FormEvent) => {
+  const handleEditFeeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingFee) return;
-    const oldNominal = feeCategories.find((f) => f.id === editingFee.id)?.nominal || 0;
-    const diff = editingFee.nominal - oldNominal;
 
-    const updatedFees = feeCategories.map((f) =>
-      f.id === editingFee.id ? { ...editingFee } : f
-    );
-    setFeeCategories(updatedFees);
-
-    // Sesuaikan totalTanggungan semua santri dengan selisih nominal
-    const updatedFinances = santriFinances.map((s) => ({
-      ...s,
-      totalTanggungan: Math.max(0, s.totalTanggungan + diff),
-    }));
-    setSantriFinances(updatedFinances);
-
-    saveStateToStorage(saldoDiTangan, updatedFees, updatedFinances, setorHistory);
-    setEditingFee(null);
+    setIsSubmitting(true);
+    try {
+      await updateFeeCategory(editingFee.id, {
+        nama: editingFee.nama,
+        nominal: editingFee.nominal,
+        keterangan: editingFee.keterangan,
+      });
+      await loadOverview();
+      setEditingFee(null);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 1c. Hapus Tagihan
-  const handleDeleteFee = (feeId: number) => {
-    const feeToDelete = feeCategories.find((f) => f.id === feeId);
-    if (!feeToDelete) return;
-
-    const updatedFees = feeCategories.filter((f) => f.id !== feeId);
-    setFeeCategories(updatedFees);
-
-    // Kurangi totalTanggungan semua santri
-    const updatedFinances = santriFinances.map((s) => ({
-      ...s,
-      totalTanggungan: Math.max(0, s.totalTanggungan - feeToDelete.nominal),
-    }));
-    setSantriFinances(updatedFinances);
-
-    saveStateToStorage(saldoDiTangan, updatedFees, updatedFinances, setorHistory);
+  const handleDeleteFee = async (feeId: number) => {
+    setIsSubmitting(true);
+    try {
+      await deleteFeeCategory(feeId);
+      await loadOverview();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 2. Submit Input Pemasukan Pembayaran
-  const handleAddPaymentSubmit = (e: React.FormEvent) => {
+  const handleAddPaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(newPayment.nominal);
     if (!amount || amount <= 0) return;
 
     const targetSantriId = parseInt(newPayment.santriId || String(santriList[0]?.id || 1));
-    const updatedFinances = santriFinances.map((s) => {
-      if (s.id === targetSantriId) {
-        return {
-          ...s,
-          totalDibayar: s.totalDibayar + amount,
-          riwayat: [
-            { tanggal: newPayment.tanggal, nominal: amount, jenis: newPayment.jenis },
-            ...s.riwayat,
-          ],
-        };
-      }
-      return s;
-    });
-
-    const newSaldo = saldoDiTangan + amount;
-    setSantriFinances(updatedFinances);
-    setSaldoDiTangan(newSaldo);
-
-    saveStateToStorage(newSaldo, feeCategories, updatedFinances, setorHistory);
-    setNewPayment({
-      santriId: String(santriList[0]?.id || '1'),
-      tanggal: '2026-09-07',
-      nominal: '',
-      jenis: 'SPP Bulanan September',
-    });
-    setIsPemasukanModalOpen(false);
+    setIsSubmitting(true);
+    try {
+      await addPayment({
+        santriId: targetSantriId,
+        tanggal: newPayment.tanggal,
+        nominal: amount,
+        jenis: newPayment.jenis || 'SPP Bulanan',
+      });
+      await loadOverview();
+      setNewPayment({
+        santriId: String(santriList[0]?.id || ''),
+        tanggal: new Date().toISOString().split('T')[0],
+        nominal: '',
+        jenis: feeCategories[0]?.nama || 'SPP Bulanan',
+      });
+      setIsPemasukanModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 3. Submit Setor Uang
-  const handleSetorUangSubmit = (e: React.FormEvent) => {
+  const handleSetorUangSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(setorForm.nominal);
     if (!amount || amount <= 0) return;
 
-    const record: SetorRecord = {
-      id: Date.now(),
-      tanggal: setorForm.tanggal,
-      nominal: amount,
-      keterangan: setorForm.keterangan,
-    };
-    const updatedSetors = [record, ...setorHistory];
-    const newSaldo = Math.max(0, saldoDiTangan - amount);
-
-    setSetorHistory(updatedSetors);
-    setSaldoDiTangan(newSaldo);
-
-    saveStateToStorage(newSaldo, feeCategories, santriFinances, updatedSetors);
-    setSetorForm({ tanggal: new Date().toISOString().split('T')[0], nominal: '', keterangan: '' });
-    setIsSetorModalOpen(false);
+    setIsSubmitting(true);
+    try {
+      await addCashHandout({
+        tanggal: setorForm.tanggal,
+        nominal: amount,
+        keterangan: setorForm.keterangan || 'Setor Kas Tunai',
+      });
+      await loadOverview();
+      setSetorForm({
+        tanggal: new Date().toISOString().split('T')[0],
+        nominal: '',
+        keterangan: '',
+      });
+      setIsSetorModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const formatRupiah = (val: number) => {
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      maximumFractionDigits: 0,
+    }).format(val);
   };
 
   return (
@@ -298,7 +219,7 @@ export default function KeuanganPage() {
           {formatRupiah(saldoDiTangan)}
         </h2>
         <p className="text-[11px] text-sky-100">
-          Uang tunai terkumpul dari pembayaran santri yang belum disetorkan.
+          Uang tunai terkumpul dari pembayaran santri yang belum disetorkan. Real-time sinkron antar perangkat.
         </p>
       </div>
 
@@ -368,7 +289,7 @@ export default function KeuanganPage() {
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(`Hapus tagihan "${cat.nama}"? Ini akan mengurangi tanggungan semua santri sebesar ${formatRupiah(cat.nominal)}.`)) {
+                      if (confirm(`Hapus tagihan "${cat.nama}"? Ini akan menghapus jenis tagihan dari sistem.`)) {
                         handleDeleteFee(cat.id);
                       }
                     }}
@@ -407,7 +328,7 @@ export default function KeuanganPage() {
             ) : (
               santriFinances.map((santri) => {
                 const sisa = Math.max(0, santri.totalTanggungan - santri.totalDibayar);
-                const isLunas = sisa === 0;
+                const isLunas = santri.totalTanggungan > 0 && sisa === 0;
 
                 return (
                   <div
@@ -420,10 +341,18 @@ export default function KeuanganPage() {
                         <h4 className="font-bold text-xs text-slate-800">{santri.nama}</h4>
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            isLunas ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                            santri.totalTanggungan === 0
+                              ? 'bg-slate-100 text-slate-600'
+                              : isLunas
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-rose-100 text-rose-800'
                           }`}
                         >
-                          {isLunas ? 'LUNAS' : `Belum: ${formatRupiah(sisa)}`}
+                          {santri.totalTanggungan === 0
+                            ? 'Belum ada tagihan'
+                            : isLunas
+                            ? 'LUNAS'
+                            : `Belum: ${formatRupiah(sisa)}`}
                         </span>
                       </div>
 
@@ -444,7 +373,6 @@ export default function KeuanganPage() {
                 );
               })
             )}
-
           </div>
         </div>
       </div>
@@ -490,7 +418,7 @@ export default function KeuanganPage() {
                     </div>
                     <div className="space-y-0.5">
                       <span className="font-bold text-xs text-slate-800 block">
-                        {new Date(record.tanggal).toLocaleDateString('id-ID', {
+                        {new Date(record.tanggal + 'T00:00:00').toLocaleDateString('id-ID', {
                           weekday: 'long',
                           day: 'numeric',
                           month: 'long',
@@ -562,9 +490,10 @@ export default function KeuanganPage() {
             </button>
             <button
               type="submit"
-              className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-2 rounded-lg"
+              disabled={isSubmitting}
+              className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg"
             >
-              Simpan Tagihan
+              {isSubmitting ? 'Menyimpan...' : 'Simpan Tagihan'}
             </button>
           </div>
         </form>
@@ -600,7 +529,7 @@ export default function KeuanganPage() {
                 className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none"
               />
               <p className="text-[10px] text-slate-400 mt-1">
-                * Perubahan nominal akan otomatis menyesuaikan total tanggungan semua santri.
+                * Perubahan nominal akan otomatis tersimpan di database dan sinkron ke seluruh perangkat.
               </p>
             </div>
             <div>
@@ -624,16 +553,17 @@ export default function KeuanganPage() {
               </button>
               <button
                 type="submit"
-                className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-2 rounded-lg"
+                disabled={isSubmitting}
+                className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg"
               >
-                Simpan Perubahan
+                {isSubmitting ? 'Menyimpan...' : 'Simpan Perubahan'}
               </button>
             </div>
           </form>
         )}
       </Modal>
 
-      {/* Modal 2: Input Pemasukan Pembayaran (Populasi Nama Siswa) */}
+      {/* Modal 2: Input Pemasukan Pembayaran */}
       <Modal
         isOpen={isPemasukanModalOpen}
         onClose={() => setIsPemasukanModalOpen(false)}
@@ -675,10 +605,17 @@ export default function KeuanganPage() {
               <input
                 type="text"
                 required
+                list="fee-category-list"
                 value={newPayment.jenis}
                 onChange={(e) => setNewPayment({ ...newPayment, jenis: e.target.value })}
+                placeholder="Contoh: SPP Bulanan"
                 className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none"
               />
+              <datalist id="fee-category-list">
+                {feeCategories.map((f) => (
+                  <option key={f.id} value={f.nama} />
+                ))}
+              </datalist>
             </div>
           </div>
 
@@ -704,10 +641,10 @@ export default function KeuanganPage() {
             </button>
             <button
               type="submit"
-              disabled={santriList.length === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSubmitting || santriList.length === 0}
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg"
             >
-              Simpan Pemasukan
+              {isSubmitting ? 'Menyimpan...' : 'Simpan Pemasukan'}
             </button>
           </div>
         </form>
@@ -723,8 +660,7 @@ export default function KeuanganPage() {
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-amber-800 text-[11px]">
             <p className="font-bold">Info Transaksi Setor Uang:</p>
             <p>
-              Transaksi ini akan <strong>mengurangi Saldo Uang di Tangan</strong> (Kas Aktif), tanpa
-              mengubah atau mengurangi rincian catatan pembayaran santri.
+              Transaksi ini akan <strong>mengurangi Saldo Uang di Tangan</strong> (Kas Aktif) di database secara real-time.
             </p>
           </div>
 
@@ -744,14 +680,14 @@ export default function KeuanganPage() {
             <input
               type="number"
               required
-              placeholder="1000000"
+              placeholder="100000"
               max={saldoDiTangan}
               value={setorForm.nominal}
               onChange={(e) => setSetorForm({ ...setorForm, nominal: e.target.value })}
               className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none font-bold text-rose-700"
             />
             <span className="text-[10px] text-slate-500 mt-1 block">
-              Maksimal setoran: {formatRupiah(saldoDiTangan)}
+              Maksimal setoran kas aktif: {formatRupiah(saldoDiTangan)}
             </span>
           </div>
 
@@ -777,9 +713,10 @@ export default function KeuanganPage() {
             </button>
             <button
               type="submit"
-              className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2 rounded-lg"
+              disabled={isSubmitting}
+              className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg"
             >
-              Konfirmasi Setor Uang
+              {isSubmitting ? 'Memproses...' : 'Konfirmasi Setor Uang'}
             </button>
           </div>
         </form>
@@ -818,8 +755,8 @@ export default function KeuanganPage() {
                 <p className="text-slate-400 italic text-[11px]">Belum ada riwayat pembayaran.</p>
               ) : (
                 <div className="bg-slate-50 border border-slate-200 rounded-lg divide-y divide-slate-200">
-                  {selectedSantriDetail.riwayat.map((r, idx) => (
-                    <div key={idx} className="p-2.5 flex items-center justify-between">
+                  {selectedSantriDetail.riwayat.map((r) => (
+                    <div key={r.id} className="p-2.5 flex items-center justify-between">
                       <div>
                         <span className="font-bold text-slate-800 block">{r.jenis}</span>
                         <span className="text-[10px] text-slate-500">{r.tanggal}</span>

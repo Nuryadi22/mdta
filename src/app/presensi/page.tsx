@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Modal from '@/components/Modal';
 import {
   Fingerprint,
@@ -11,26 +11,20 @@ import {
   ChevronRight,
   Eye,
   CalendarDays,
-  UserCheck,
-  AlertTriangle,
-  Clock,
-  XCircle,
   Filter,
   BarChart3,
   ListFilter
 } from 'lucide-react';
 import { useSantri } from '@/app/lib/santri';
-
-type AttendanceStatus = 'HADIR' | 'SAKIT' | 'IZIN' | 'ALPA';
-
-interface DailyAttendanceRecord {
-  id: string; // date + _ + santriId
-  date: string; // YYYY-MM-DD
-  santriId: number;
-  santriNama: string;
-  status: AttendanceStatus;
-  keterangan?: string;
-}
+import {
+  getAttendanceRecordsByDate,
+  saveAttendanceRecords,
+  getMonthlyAttendanceSummary,
+  getSantriAttendanceHistory,
+  AttendanceStatus,
+  MonthlySantriRekap,
+  SantriAttendanceLog,
+} from '@/app/actions/presensi';
 
 interface SantriAttendanceItem {
   id: number;
@@ -39,10 +33,6 @@ interface SantriAttendanceItem {
   keterangan?: string;
 }
 
-const INITIAL_RECORDS: DailyAttendanceRecord[] = [];
-
-const LOCAL_STORAGE_KEY = 'mdta_attendance_records_v2'; // v2 = fresh start, clear v1 dummy
-
 export default function PresensiPage() {
   const { santriList } = useSantri();
   const [activeTab, setActiveTab] = useState<'INPUT' | 'REKAP'>('INPUT');
@@ -50,60 +40,74 @@ export default function PresensiPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [isSavedDraft, setIsSavedDraft] = useState(false);
   const [isFinalCommitted, setIsFinalCommitted] = useState(false);
-
-  // All stored daily attendance records
-  const [allRecords, setAllRecords] = useState<DailyAttendanceRecord[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Current date input list
   const [attendanceList, setAttendanceList] = useState<SantriAttendanceItem[]>([]);
 
+  // Monthly rekap data from database
+  const [monthlyRekapList, setMonthlyRekapList] = useState<MonthlySantriRekap[]>([]);
+
   // Santri detail modal state
   const [selectedSantriId, setSelectedSantriId] = useState<number | null>(null);
   const [modalViewMode, setModalViewMode] = useState<'PER_BULAN' | 'PER_HARI'>('PER_BULAN');
+  const [santriLogs, setSantriLogs] = useState<SantriAttendanceLog[]>([]);
 
-  // Load from localStorage on client side
-  useEffect(() => {
+  // 1. Fetch attendance records for selected date from DB
+  const loadDateAttendance = useCallback(async (date: string, currentSantriList = santriList) => {
+    if (currentSantriList.length === 0) return;
+
     try {
-      // Hapus cache lama v1 yang berisi data dummy
-      localStorage.removeItem('mdta_attendance_records_v1');
+      const records = await getAttendanceRecordsByDate(date);
+      const items: SantriAttendanceItem[] = currentSantriList.map((santri) => {
+        const found = records.find((r) => r.santriId === santri.id);
+        return {
+          id: santri.id,
+          nama: santri.nama,
+          status: found ? found.status : 'HADIR',
+          keterangan: found?.keterangan || '',
+        };
+      });
 
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        setAllRecords(JSON.parse(saved));
-      }
+      setAttendanceList(items);
+      setIsSavedDraft(false);
+      setIsFinalCommitted(records.length > 0 && records.some((r) => r.commitStatus === 'FINAL'));
     } catch (err) {
-      console.error('Failed to load attendance records from localStorage', err);
+      console.error('Error fetching date attendance:', err);
+    }
+  }, [santriList]);
+
+  // Load date records when selectedDate or santriList changes
+  useEffect(() => {
+    loadDateAttendance(selectedDate, santriList);
+  }, [selectedDate, santriList, loadDateAttendance]);
+
+  // 2. Fetch monthly summary from DB
+  const loadMonthlySummary = useCallback(async (month: string) => {
+    try {
+      const summary = await getMonthlyAttendanceSummary(month);
+      setMonthlyRekapList(summary);
+    } catch (err) {
+      console.error('Error fetching monthly summary:', err);
     }
   }, []);
 
-  // Save to localStorage when records update
-  const saveRecordsToStorage = (records: DailyAttendanceRecord[]) => {
-    setAllRecords(records);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(records));
-    } catch (err) {
-      console.error('Failed to save attendance records to localStorage', err);
-    }
-  };
-
-  // Populate attendance list whenever selectedDate, santriList, or allRecords change
   useEffect(() => {
-    const existingDateRecords = allRecords.filter((r) => r.date === selectedDate);
-    
-    const items: SantriAttendanceItem[] = santriList.map((santri) => {
-      const found = existingDateRecords.find((r) => r.santriId === santri.id);
-      return {
-        id: santri.id,
-        nama: santri.nama,
-        status: found ? found.status : 'HADIR',
-        keterangan: found?.keterangan || '',
-      };
-    });
+    if (activeTab === 'REKAP') {
+      loadMonthlySummary(selectedMonth);
+    }
+  }, [activeTab, selectedMonth, loadMonthlySummary]);
 
-    setAttendanceList(items);
-    setIsSavedDraft(false);
-    setIsFinalCommitted(existingDateRecords.length > 0);
-  }, [selectedDate, allRecords, santriList]);
+  // 3. Fetch single santri logs when modal opens
+  useEffect(() => {
+    if (selectedSantriId !== null) {
+      getSantriAttendanceHistory(selectedSantriId).then((logs) => {
+        setSantriLogs(logs);
+      });
+    } else {
+      setSantriLogs([]);
+    }
+  }, [selectedSantriId]);
 
   const handleStatusChange = (id: number, status: AttendanceStatus) => {
     setAttendanceList((prev) =>
@@ -121,27 +125,38 @@ export default function PresensiPage() {
     setIsFinalCommitted(false);
   };
 
-  const handleSaveDraft = () => {
-    setIsSavedDraft(true);
-  };
-
-  const handleFinalCommit = () => {
-    const updatedRecords = [...allRecords.filter((r) => r.date !== selectedDate)];
-    
-    attendanceList.forEach((item) => {
-      updatedRecords.push({
-        id: `${selectedDate}_${item.id}`,
-        date: selectedDate,
+  const handleSaveDraft = async () => {
+    if (attendanceList.length === 0) return;
+    setIsSaving(true);
+    try {
+      const payload = attendanceList.map((item) => ({
         santriId: item.id,
-        santriNama: item.nama,
         status: item.status,
         keterangan: item.keterangan || '',
-      });
-    });
+      }));
+      await saveAttendanceRecords(selectedDate, payload, true);
+      setIsSavedDraft(true);
+      setIsFinalCommitted(false);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-    saveRecordsToStorage(updatedRecords);
-    setIsFinalCommitted(true);
-    setIsSavedDraft(false);
+  const handleFinalCommit = async () => {
+    if (attendanceList.length === 0) return;
+    setIsSaving(true);
+    try {
+      const payload = attendanceList.map((item) => ({
+        santriId: item.id,
+        status: item.status,
+        keterangan: item.keterangan || '',
+      }));
+      await saveAttendanceRecords(selectedDate, payload, false);
+      setIsFinalCommitted(true);
+      setIsSavedDraft(false);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Helper for Status Buttons in Input Form
@@ -197,58 +212,26 @@ export default function PresensiPage() {
     }
   };
 
-  // Calculate Monthly Rekap for all santri in selectedMonth
-  const getMonthlyRekapList = () => {
-    const monthRecords = allRecords.filter((r) => r.date.startsWith(selectedMonth));
-    
-    return santriList.map((santri) => {
-      const santriRecords = monthRecords.filter((r) => r.santriId === santri.id);
-      const hadir = santriRecords.filter((r) => r.status === 'HADIR').length;
-      const sakit = santriRecords.filter((r) => r.status === 'SAKIT').length;
-      const izin = santriRecords.filter((r) => r.status === 'IZIN').length;
-      const alpa = santriRecords.filter((r) => r.status === 'ALPA').length;
-      const totalRecordedDays = santriRecords.length;
-      const percentage = totalRecordedDays > 0 ? Math.round((hadir / totalRecordedDays) * 100) : 0;
-
-      return {
-        ...santri,
-        hadir,
-        sakit,
-        izin,
-        alpa,
-        totalRecordedDays,
-        percentage,
-      };
-    });
-  };
-
   const selectedSantriInfo = santriList.find((s) => s.id === selectedSantriId);
 
-  // Selected Santri's records for selected month
-  const selectedSantriMonthRecords = selectedSantriId
-    ? allRecords
-        .filter((r) => r.santriId === selectedSantriId && r.date.startsWith(selectedMonth))
-        .sort((a, b) => b.date.localeCompare(a.date))
-    : [];
+  // Santri logs filtered for selected month
+  const selectedSantriMonthRecords = santriLogs.filter((r) => r.date.startsWith(selectedMonth));
 
-  const selectedSantriAllRecords = selectedSantriId
-    ? allRecords
-        .filter((r) => r.santriId === selectedSantriId)
-        .sort((a, b) => b.date.localeCompare(a.date))
-    : [];
-
-  const selectedSantriMonthlyStats = () => {
-    const recs = selectedSantriMonthRecords;
-    const hadir = recs.filter((r) => r.status === 'HADIR').length;
-    const sakit = recs.filter((r) => r.status === 'SAKIT').length;
-    const izin = recs.filter((r) => r.status === 'IZIN').length;
-    const alpa = recs.filter((r) => r.status === 'ALPA').length;
-    const total = recs.length;
-    const percentage = total > 0 ? Math.round((hadir / total) * 100) : 0;
-    return { hadir, sakit, izin, alpa, total, percentage };
+  const statsModal = {
+    hadir: selectedSantriMonthRecords.filter((r) => r.status === 'HADIR').length,
+    sakit: selectedSantriMonthRecords.filter((r) => r.status === 'SAKIT').length,
+    izin: selectedSantriMonthRecords.filter((r) => r.status === 'IZIN').length,
+    alpa: selectedSantriMonthRecords.filter((r) => r.status === 'ALPA').length,
+    total: selectedSantriMonthRecords.length,
+    percentage:
+      selectedSantriMonthRecords.length > 0
+        ? Math.round(
+            (selectedSantriMonthRecords.filter((r) => r.status === 'HADIR').length /
+              selectedSantriMonthRecords.length) *
+              100
+          )
+        : 0,
   };
-
-  const statsModal = selectedSantriMonthlyStats();
 
   return (
     <div className="space-y-4">
@@ -316,10 +299,11 @@ export default function PresensiPage() {
               </span>
               <button
                 onClick={handleSaveDraft}
-                className="text-xs font-semibold text-sky-600 hover:underline flex items-center space-x-1"
+                disabled={isSaving || attendanceList.length === 0}
+                className="text-xs font-semibold text-sky-600 hover:underline flex items-center space-x-1 disabled:opacity-50"
               >
                 <Save className="w-3.5 h-3.5" />
-                <span>Simpan Sementara</span>
+                <span>{isSaving ? 'Menyimpan...' : 'Simpan Sementara'}</span>
               </button>
             </div>
 
@@ -389,11 +373,11 @@ export default function PresensiPage() {
           <div className="pt-2">
             <button
               onClick={handleFinalCommit}
-              disabled={attendanceList.length === 0}
+              disabled={isSaving || attendanceList.length === 0}
               className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold py-3 rounded-xl flex items-center justify-center space-x-2 shadow-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <CheckCircle2 className="w-5 h-5" />
-              <span>Simpan Final Presensi ke Database</span>
+              <span>{isSaving ? 'Menyimpan ke Database...' : 'Simpan Final Presensi ke Database'}</span>
             </button>
           </div>
         </div>
@@ -408,7 +392,7 @@ export default function PresensiPage() {
               <div>
                 <p className="font-bold text-sm text-sky-900">Rekapitulasi Kehadiran Santri</p>
                 <p className="text-[11px] text-sky-700 mt-0.5">
-                  Klik nama santri untuk melihat rincian <strong>Per Hari</strong> dan <strong>Per Bulan</strong>.
+                  Data otomatis sinkron dari database. Klik nama santri untuk rincian harian.
                 </p>
               </div>
             </div>
@@ -428,50 +412,56 @@ export default function PresensiPage() {
 
           {/* Rekapitulasi Table / Cards List */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-            <div className="divide-y divide-slate-100">
-              {getMonthlyRekapList().map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => {
-                    setSelectedSantriId(item.id);
-                    setModalViewMode('PER_BULAN');
-                  }}
-                  className="p-3.5 flex items-center justify-between hover:bg-sky-50/50 cursor-pointer transition-colors"
-                >
-                  <div className="space-y-1.5 flex-1 pr-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-xs text-slate-800">{item.nama}</h4>
-                      <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        {item.percentage}% Hadir
-                      </span>
+            {monthlyRekapList.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-xs">
+                Belum ada data kehadiran untuk bulan ini.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {monthlyRekapList.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      setSelectedSantriId(item.id);
+                      setModalViewMode('PER_BULAN');
+                    }}
+                    className="p-3.5 flex items-center justify-between hover:bg-sky-50/50 cursor-pointer transition-colors"
+                  >
+                    <div className="space-y-1.5 flex-1 pr-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-xs text-slate-800">{item.nama}</h4>
+                        <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          {item.percentage}% Hadir
+                        </span>
+                      </div>
+
+                      <div className="flex items-center space-x-1.5 text-[10px] font-semibold flex-wrap gap-y-1">
+                        <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                          Hadir: {item.hadir}
+                        </span>
+                        <span className="text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded">
+                          Izin: {item.izin}
+                        </span>
+                        <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                          Sakit: {item.sakit}
+                        </span>
+                        <span className="text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
+                          Alpa: {item.alpa}
+                        </span>
+                        <span className="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                          Total: {item.totalRecordedDays} Hari
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center space-x-1.5 text-[10px] font-semibold flex-wrap gap-y-1">
-                      <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-                        Hadir: {item.hadir}
-                      </span>
-                      <span className="text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded">
-                        Izin: {item.izin}
-                      </span>
-                      <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
-                        Sakit: {item.sakit}
-                      </span>
-                      <span className="text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">
-                        Alpa: {item.alpa}
-                      </span>
-                      <span className="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                        Total: {item.totalRecordedDays} Hari
-                      </span>
+                    <div className="flex items-center space-x-1 text-slate-400 flex-shrink-0">
+                      <Eye className="w-4 h-4 text-sky-600" />
+                      <ChevronRight className="w-4 h-4 text-slate-300" />
                     </div>
                   </div>
-
-                  <div className="flex items-center space-x-1 text-slate-400 flex-shrink-0">
-                    <Eye className="w-4 h-4 text-sky-600" />
-                    <ChevronRight className="w-4 h-4 text-slate-300" />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -569,17 +559,17 @@ export default function PresensiPage() {
                 <div className="flex items-center justify-between">
                   <h4 className="font-bold text-xs text-slate-800 flex items-center space-x-1">
                     <CalendarDays className="w-4 h-4 text-sky-600" />
-                    <span>Log Kehadiran Harian ({selectedSantriAllRecords.length} Hari)</span>
+                    <span>Log Kehadiran Harian ({santriLogs.length} Hari)</span>
                   </h4>
                 </div>
 
-                {selectedSantriAllRecords.length === 0 ? (
+                {santriLogs.length === 0 ? (
                   <div className="p-6 text-center text-slate-400 text-xs italic bg-slate-50 rounded-lg">
                     Belum ada riwayat kehadiran harian untuk santri ini.
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                    {selectedSantriAllRecords.map((record) => (
+                    {santriLogs.map((record) => (
                       <div
                         key={record.id}
                         className="bg-white border border-slate-200 rounded-lg p-2.5 flex items-center justify-between shadow-2xs"

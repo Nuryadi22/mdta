@@ -1,23 +1,32 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Users, UserCheck, Clock, AlertTriangle, XCircle, Fingerprint, Wallet, UserPlus } from 'lucide-react';
 import { useProfile } from '@/app/lib/profile';
 import { useSantri } from '@/app/lib/santri';
+import { getTodayAttendanceStats } from '@/app/actions/presensi';
 
 export default function BerandaPage() {
   const { profile } = useProfile();
   const { santriList } = useSantri();
+  const [todayAttendance, setTodayAttendance] = useState({
+    hadir: 0,
+    izin: 0,
+    sakit: 0,
+    alpa: 0,
+  });
+
+  useEffect(() => {
+    getTodayAttendanceStats().then((data) => {
+      setTodayAttendance(data);
+    });
+  }, []);
 
   // Summary data synced with state
   const stats = {
     totalSantri: santriList.length,
-    kehadiranHariIni: {
-      hadir: 0,
-      izin: 0,
-      sakit: 0,
-      alpa: 0,
-    },
+    kehadiranHariIni: todayAttendance,
     tanggal: new Date().toLocaleDateString('id-ID', {
       weekday: 'long',
       day: 'numeric',

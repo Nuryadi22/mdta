@@ -1,67 +1,42 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { getProfile as fetchProfile, updateProfile as saveProfileServer, ProfileData } from '@/app/actions/profile';
 
-export interface ProfileData {
-  namaUstadz: string;
-  namaMdta: string;
-}
+export type { ProfileData };
 
 const DEFAULT_PROFILE: ProfileData = {
-  namaUstadz: '',
-  namaMdta: '',
+  namaUstadz: 'Nuryadi',
+  namaMdta: 'MDTA Al-Istikmal',
 };
-
-const STORAGE_KEY = 'mdta_profile_data';
-const EVENT_NAME = 'mdta_profile_updated';
-
-export function getProfile(): ProfileData {
-  if (typeof window === 'undefined') return DEFAULT_PROFILE;
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (data) {
-      const parsed: ProfileData = JSON.parse(data);
-      // Reset jika masih berisi data dummy lama
-      if (parsed.namaUstadz === 'Ustadz Ahmad Farhan, S.Pd.I') {
-        localStorage.removeItem(STORAGE_KEY);
-        return DEFAULT_PROFILE;
-      }
-      return parsed;
-    }
-  } catch (e) {
-    console.error('Failed to read profile', e);
-  }
-  return DEFAULT_PROFILE;
-}
-
-export function saveProfile(profile: ProfileData) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
-    window.dispatchEvent(new Event(EVENT_NAME));
-  } catch (e) {
-    console.error('Failed to save profile', e);
-  }
-}
 
 export function useProfile() {
   const [profile, setProfile] = useState<ProfileData>(DEFAULT_PROFILE);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    setProfile(getProfile());
-
-    const handleUpdate = () => {
-      setProfile(getProfile());
-    };
-
-    window.addEventListener(EVENT_NAME, handleUpdate);
-    window.addEventListener('storage', handleUpdate);
-
-    return () => {
-      window.removeEventListener(EVENT_NAME, handleUpdate);
-      window.removeEventListener('storage', handleUpdate);
-    };
+  const loadProfile = useCallback(async () => {
+    try {
+      const data = await fetchProfile();
+      setProfile(data);
+    } catch (e) {
+      console.error('Failed to load profile from database', e);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  return { profile, updateProfile: saveProfile };
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const updateProfile = async (newProfile: ProfileData) => {
+    setProfile(newProfile);
+    try {
+      await saveProfileServer(newProfile);
+    } catch (e) {
+      console.error('Failed to save profile to database', e);
+    }
+  };
+
+  return { profile, updateProfile, isLoading, refreshProfile: loadProfile };
 }

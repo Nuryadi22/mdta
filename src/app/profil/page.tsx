@@ -14,6 +14,7 @@ import {
   Info
 } from 'lucide-react';
 import { useProfile } from '@/app/lib/profile';
+import { changePassword } from '@/app/actions/profile';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -86,12 +87,14 @@ export default function ProfilPage() {
     newPassword: '',
     confirmPassword: '',
   });
+  const [passwordError, setPasswordError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [profileSuccessMessage, setProfileSuccessMessage] = useState('');
+  const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
 
-  const handleEditProfileSubmit = (e: React.FormEvent) => {
+  const handleEditProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfile(profileForm);
+    await updateProfile(profileForm);
     setProfileSuccessMessage('Identitas berhasil diperbarui!');
     setTimeout(() => {
       setIsEditProfileOpen(false);
@@ -99,19 +102,40 @@ export default function ProfilPage() {
     }, 1000);
   };
 
-  const handleChangePasswordSubmit = (e: React.FormEvent) => {
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setPasswordError('');
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      alert('Konfirmasi password baru tidak cocok!');
+      setPasswordError('Konfirmasi password baru tidak cocok!');
       return;
     }
 
-    setSuccessMessage('Password berhasil diperbarui!');
-    setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
-    setTimeout(() => {
-      setIsPasswordModalOpen(false);
-      setSuccessMessage('');
-    }, 1200);
+    if (passwordForm.newPassword.length < 6) {
+      setPasswordError('Password baru minimal 6 karakter!');
+      return;
+    }
+
+    setIsSubmittingPassword(true);
+    try {
+      const res = await changePassword(passwordForm.oldPassword, passwordForm.newPassword);
+      if (!res.success) {
+        setPasswordError(res.error || 'Gagal mengubah password');
+        setIsSubmittingPassword(false);
+        return;
+      }
+
+      setSuccessMessage('Password berhasil diperbarui di database!');
+      setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+      setTimeout(() => {
+        setIsPasswordModalOpen(false);
+        setSuccessMessage('');
+        setPasswordError('');
+      }, 1200);
+    } catch {
+      setPasswordError('Terjadi kesalahan saat menghubungi server');
+    } finally {
+      setIsSubmittingPassword(false);
+    }
   };
 
   // Extract initials
@@ -257,6 +281,12 @@ export default function ProfilPage() {
         title="Ganti Password Ustadz"
       >
         <form onSubmit={handleChangePasswordSubmit} className="space-y-3 text-xs">
+          {passwordError && (
+            <div className="bg-rose-100 border border-rose-300 text-rose-800 p-2.5 rounded-lg flex items-center space-x-2 font-bold">
+              <span>{passwordError}</span>
+            </div>
+          )}
+
           {successMessage && (
             <div className="bg-emerald-100 border border-emerald-300 text-emerald-800 p-2.5 rounded-lg flex items-center space-x-2 font-bold">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -310,9 +340,10 @@ export default function ProfilPage() {
             </button>
             <button
               type="submit"
-              className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-2 rounded-lg"
+              disabled={isSubmittingPassword}
+              className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg"
             >
-              Simpan Password Baru
+              {isSubmittingPassword ? 'Menyimpan...' : 'Simpan Password Baru'}
             </button>
           </div>
         </form>

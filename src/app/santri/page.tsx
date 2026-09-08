@@ -6,12 +6,13 @@ import { UserPlus, Pencil, Trash2, Search, Phone, Calendar, MapPin } from 'lucid
 import { useSantri, Santri } from '@/app/lib/santri';
 
 export default function SantriPage() {
-  const { santriList, updateSantriList } = useSantri();
+  const { santriList, isLoading, addSantri, updateSantri, deleteSantri } = useSantri();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [selectedSantri, setSelectedSantri] = useState<Santri | null>(null);
 
@@ -58,36 +59,43 @@ export default function SantriPage() {
     setIsDeleteModalOpen(true);
   };
 
-  const handleAddSubmit = (e: React.FormEvent) => {
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.nama) return;
 
-    const newSantri: Santri = {
-      id: Date.now(),
-      ...formData,
-    };
-    updateSantriList([newSantri, ...santriList]);
-    setIsAddModalOpen(false);
+    setIsSubmitting(true);
+    try {
+      await addSantri(formData);
+      setIsAddModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSantri) return;
 
-    updateSantriList(
-      santriList.map((s) =>
-        s.id === selectedSantri.id ? { ...s, ...formData } : s
-      )
-    );
-    setIsEditModalOpen(false);
-    setSelectedSantri(null);
+    setIsSubmitting(true);
+    try {
+      await updateSantri(selectedSantri.id, formData);
+      setIsEditModalOpen(false);
+      setSelectedSantri(null);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!selectedSantri) return;
-    updateSantriList(santriList.filter((s) => s.id !== selectedSantri.id));
-    setIsDeleteModalOpen(false);
-    setSelectedSantri(null);
+    setIsSubmitting(true);
+    try {
+      await deleteSantri(selectedSantri.id);
+      setIsDeleteModalOpen(false);
+      setSelectedSantri(null);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filteredSantri = santriList.filter((s) =>
@@ -269,9 +277,10 @@ export default function SantriPage() {
             </button>
             <button
               type="submit"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg transition-colors"
+              disabled={isSubmitting}
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg transition-colors"
             >
-              Simpan Data
+              {isSubmitting ? 'Menyimpan...' : 'Simpan Data'}
             </button>
           </div>
         </form>
@@ -356,9 +365,10 @@ export default function SantriPage() {
             </button>
             <button
               type="submit"
-              className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-2 rounded-lg transition-colors"
+              disabled={isSubmitting}
+              className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg transition-colors"
             >
-              Update Data
+              {isSubmitting ? 'Memperbarui...' : 'Update Data'}
             </button>
           </div>
         </form>
@@ -385,10 +395,11 @@ export default function SantriPage() {
             </button>
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={handleDeleteConfirm}
-              className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2 rounded-lg transition-colors"
+              className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg transition-colors"
             >
-              Hapus Permanen
+              {isSubmitting ? 'Menghapus...' : 'Hapus Permanen'}
             </button>
           </div>
         </div>
