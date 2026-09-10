@@ -12,7 +12,10 @@ import {
   CalendarDays,
   Banknote,
   Pencil,
-  Trash2
+  Trash2,
+  HandCoins,
+  Info,
+  RotateCcw
 } from 'lucide-react';
 import { useSantri } from '@/app/lib/santri';
 import {
@@ -22,9 +25,12 @@ import {
   deleteFeeCategory,
   addPayment,
   addCashHandout,
+  addCashLoan,
+  repayCashLoan,
   FeeCategory,
   SetorRecord,
   SantriFinancial,
+  LoanRecord,
 } from '@/app/actions/keuangan';
 
 export default function KeuanganPage() {
@@ -32,9 +38,12 @@ export default function KeuanganPage() {
 
   // Financial State from MySQL
   const [saldoDiTangan, setSaldoDiTangan] = useState<number>(0);
+  const [saldoSeharusnya, setSaldoSeharusnya] = useState<number>(0);
+  const [uangDipinjam, setUangDipinjam] = useState<number>(0);
   const [feeCategories, setFeeCategories] = useState<FeeCategory[]>([]);
   const [santriFinances, setSantriFinances] = useState<SantriFinancial[]>([]);
   const [setorHistory, setSetorHistory] = useState<SetorRecord[]>([]);
+  const [loanHistory, setLoanHistory] = useState<LoanRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -42,11 +51,19 @@ export default function KeuanganPage() {
   const [isTagihanModalOpen, setIsTagihanModalOpen] = useState(false);
   const [isPemasukanModalOpen, setIsPemasukanModalOpen] = useState(false);
   const [isSetorModalOpen, setIsSetorModalOpen] = useState(false);
+  const [isPinjamModalOpen, setIsPinjamModalOpen] = useState(false);
+  const [isSaldoDetailOpen, setIsSaldoDetailOpen] = useState(false);
   const [selectedSantriDetail, setSelectedSantriDetail] = useState<SantriFinancial | null>(null);
   const [editingFee, setEditingFee] = useState<FeeCategory | null>(null);
 
   // Forms state
-  const [newFee, setNewFee] = useState({ nama: '', nominal: '', keterangan: '' });
+  const [newFee, setNewFee] = useState({
+    nama: '',
+    nominal: '',
+    keterangan: '',
+    untukSemua: true,
+    santriIds: [] as number[],
+  });
   const [newPayment, setNewPayment] = useState({
     santriId: '',
     tanggal: new Date().toISOString().split('T')[0],
@@ -58,15 +75,24 @@ export default function KeuanganPage() {
     nominal: '',
     keterangan: '',
   });
+  const [pinjamForm, setPinjamForm] = useState({
+    tanggal: new Date().toISOString().split('T')[0],
+    nominal: '',
+    peminjam: '',
+    keterangan: '',
+  });
 
   // Load state from DB
   const loadOverview = useCallback(async () => {
     try {
       const data = await getKeuanganOverview();
       setSaldoDiTangan(data.saldoDiTangan);
+      setSaldoSeharusnya(data.saldoSeharusnya);
+      setUangDipinjam(data.uangDipinjam);
       setFeeCategories(data.feeCategories);
       setSantriFinances(data.santriFinances);
       setSetorHistory(data.setorHistory);
+      setLoanHistory(data.loanHistory);
     } catch (e) {
       console.error('Failed to load financial state from database', e);
     } finally {
@@ -100,9 +126,11 @@ export default function KeuanganPage() {
         nama: newFee.nama,
         nominal: parseFloat(newFee.nominal),
         keterangan: newFee.keterangan,
+        untukSemua: newFee.untukSemua,
+        santriIds: newFee.santriIds,
       });
       await loadOverview();
-      setNewFee({ nama: '', nominal: '', keterangan: '' });
+      setNewFee({ nama: '', nominal: '', keterangan: '', untukSemua: true, santriIds: [] });
       setIsTagihanModalOpen(false);
     } finally {
       setIsSubmitting(false);
@@ -120,6 +148,8 @@ export default function KeuanganPage() {
         nama: editingFee.nama,
         nominal: editingFee.nominal,
         keterangan: editingFee.keterangan,
+        untukSemua: editingFee.untukSemua,
+        santriIds: editingFee.santriIds,
       });
       await loadOverview();
       setEditingFee(null);
@@ -192,6 +222,53 @@ export default function KeuanganPage() {
     }
   };
 
+  const handlePinjamSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = parseFloat(pinjamForm.nominal);
+    if (!amount || amount <= 0 || !pinjamForm.peminjam.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      await addCashLoan({
+        tanggal: pinjamForm.tanggal,
+        nominal: amount,
+        peminjam: pinjamForm.peminjam,
+        keterangan: pinjamForm.keterangan || 'Pinjam kas tunai',
+      });
+      await loadOverview();
+      setPinjamForm({
+        tanggal: new Date().toISOString().split('T')[0],
+        nominal: '',
+        peminjam: '',
+        keterangan: '',
+      });
+      setIsPinjamModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRepayLoan = async (loanId: number) => {
+    setIsSubmitting(true);
+    try {
+      await repayCashLoan(loanId);
+      await loadOverview();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const toggleFeeSantri = (list: number[], santriId: number) =>
+    list.includes(santriId) ? list.filter((id) => id !== santriId) : [...list, santriId];
+
+  const describeFeeTarget = (fee: FeeCategory) => {
+    if (fee.untukSemua) return 'Semua santri';
+    const names = santriList.filter((s) => fee.santriIds.includes(s.id)).map((s) => s.nama);
+    if (names.length === 0) return `${fee.santriIds.length} santri terpilih`;
+    if (names.length <= 2) return names.join(', ');
+    return `${names.slice(0, 2).join(', ')} +${names.length - 2} santri`;
+  };
+
   const formatRupiah = (val: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -211,20 +288,24 @@ export default function KeuanganPage() {
             </div>
             <span className="text-xs font-semibold text-sky-100">Saldo Uang di Tangan (Kas Aktif)</span>
           </div>
-          <span className="text-[10px] font-bold bg-white text-sky-700 px-2 py-0.5 rounded-full uppercase">
-            Kas Tunai
-          </span>
+          <button
+            type="button"
+            onClick={() => setIsSaldoDetailOpen(true)}
+            className="text-[10px] font-bold bg-white text-sky-700 px-2.5 py-1 rounded-full uppercase hover:bg-sky-50"
+          >
+            Detail
+          </button>
         </div>
         <h2 className="text-2xl font-extrabold tracking-tight">
           {formatRupiah(saldoDiTangan)}
         </h2>
         <p className="text-[11px] text-sky-100">
-          Uang tunai terkumpul dari pembayaran santri yang belum disetorkan. Real-time sinkron antar perangkat.
+          Kas yang masih dipegang setelah dikurangi pinjaman. Klik Detail untuk rincian.
         </p>
       </div>
 
       {/* Primary Action Buttons Grid */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => {
             if (!newPayment.santriId && santriList[0]) {
@@ -244,6 +325,14 @@ export default function KeuanganPage() {
         >
           <ArrowUpRight className="w-5 h-5" />
           <span>Setor Kas Uang</span>
+        </button>
+
+        <button
+          onClick={() => setIsPinjamModalOpen(true)}
+          className="bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white font-bold p-2.5 rounded-xl flex flex-col items-center justify-center text-center space-y-1 shadow-sm transition-colors text-xs"
+        >
+          <HandCoins className="w-5 h-5" />
+          <span>Pinjam Uang</span>
         </button>
 
         <button
@@ -275,6 +364,9 @@ export default function KeuanganPage() {
                 <div className="flex-1 min-w-0">
                   <span className="font-bold text-slate-800 block truncate">{cat.nama}</span>
                   <span className="text-sky-700 font-extrabold">{formatRupiah(cat.nominal)}</span>
+                  <span className="text-violet-700 block text-[10px] font-semibold truncate mt-0.5">
+                    Untuk: {describeFeeTarget(cat)}
+                  </span>
                   {cat.keterangan ? (
                     <span className="text-slate-400 block text-[10px] truncate mt-0.5">{cat.keterangan}</span>
                   ) : null}
@@ -480,6 +572,57 @@ export default function KeuanganPage() {
             />
           </div>
 
+          <div>
+            <label className="block font-bold text-slate-700 mb-1">Tagihan ini untuk siapa?</label>
+            <div className="flex gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => setNewFee({ ...newFee, untukSemua: true, santriIds: [] })}
+                className={`flex-1 py-2 rounded-lg font-bold border ${
+                  newFee.untukSemua
+                    ? 'bg-sky-500 text-white border-sky-600'
+                    : 'bg-white text-slate-600 border-slate-300'
+                }`}
+              >
+                Semua Santri
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewFee({ ...newFee, untukSemua: false })}
+                className={`flex-1 py-2 rounded-lg font-bold border ${
+                  !newFee.untukSemua
+                    ? 'bg-violet-600 text-white border-violet-700'
+                    : 'bg-white text-slate-600 border-slate-300'
+                }`}
+              >
+                Pilih Santri
+              </button>
+            </div>
+            {!newFee.untukSemua && (
+              <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {santriList.length === 0 ? (
+                  <p className="p-2.5 text-slate-400 italic">Belum ada data santri.</p>
+                ) : (
+                  santriList.map((s) => (
+                    <label key={s.id} className="flex items-center gap-2 p-2.5 hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newFee.santriIds.includes(s.id)}
+                        onChange={() =>
+                          setNewFee({ ...newFee, santriIds: toggleFeeSantri(newFee.santriIds, s.id) })
+                        }
+                      />
+                      <span className="font-semibold text-slate-800">{s.nama}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            )}
+            <p className="text-[10px] text-slate-500 mt-1">
+              Gunakan &ldquo;Pilih Santri&rdquo; untuk tagihan khusus, misalnya baju seragam atau santri yang tidak wajib bayar.
+            </p>
+          </div>
+
           <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
             <button
               type="button"
@@ -490,7 +633,7 @@ export default function KeuanganPage() {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || (!newFee.untukSemua && newFee.santriIds.length === 0)}
               className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg"
             >
               {isSubmitting ? 'Menyimpan...' : 'Simpan Tagihan'}
@@ -543,6 +686,53 @@ export default function KeuanganPage() {
               />
             </div>
 
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Tagihan ini untuk siapa?</label>
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingFee({ ...editingFee, untukSemua: true, santriIds: [] })}
+                  className={`flex-1 py-2 rounded-lg font-bold border ${
+                    editingFee.untukSemua
+                      ? 'bg-sky-500 text-white border-sky-600'
+                      : 'bg-white text-slate-600 border-slate-300'
+                  }`}
+                >
+                  Semua Santri
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingFee({ ...editingFee, untukSemua: false })}
+                  className={`flex-1 py-2 rounded-lg font-bold border ${
+                    !editingFee.untukSemua
+                      ? 'bg-violet-600 text-white border-violet-700'
+                      : 'bg-white text-slate-600 border-slate-300'
+                  }`}
+                >
+                  Pilih Santri
+                </button>
+              </div>
+              {!editingFee.untukSemua && (
+                <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                  {santriList.map((s) => (
+                    <label key={s.id} className="flex items-center gap-2 p-2.5 hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editingFee.santriIds.includes(s.id)}
+                        onChange={() =>
+                          setEditingFee({
+                            ...editingFee,
+                            santriIds: toggleFeeSantri(editingFee.santriIds, s.id),
+                          })
+                        }
+                      />
+                      <span className="font-semibold text-slate-800">{s.nama}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
@@ -553,7 +743,7 @@ export default function KeuanganPage() {
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || (!editingFee.untukSemua && editingFee.santriIds.length === 0)}
                 className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg"
               >
                 {isSubmitting ? 'Menyimpan...' : 'Simpan Perubahan'}
@@ -720,6 +910,179 @@ export default function KeuanganPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal: Pinjam Uang */}
+      <Modal
+        isOpen={isPinjamModalOpen}
+        onClose={() => setIsPinjamModalOpen(false)}
+        title="Pinjam Uang Kas"
+      >
+        <form onSubmit={handlePinjamSubmit} className="space-y-3 text-xs">
+          <div className="bg-violet-50 border border-violet-200 rounded-lg p-2.5 text-violet-800 text-[11px]">
+            <p className="font-bold">Info Pinjaman Kas:</p>
+            <p>
+              Nominal pinjaman akan <strong>mengurangi saldo yang dipegang</strong>. Total kas yang seharusnya tetap tercatat di rincian saldo.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 mb-1">Nama Peminjam</label>
+            <input
+              type="text"
+              required
+              placeholder="Nama ustadz / pengelola yang meminjam"
+              value={pinjamForm.peminjam}
+              onChange={(e) => setPinjamForm({ ...pinjamForm, peminjam: e.target.value })}
+              className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 mb-1">Tanggal Pinjam</label>
+            <input
+              type="date"
+              required
+              value={pinjamForm.tanggal}
+              onChange={(e) => setPinjamForm({ ...pinjamForm, tanggal: e.target.value })}
+              className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 mb-1">Nominal Pinjaman (Rp)</label>
+            <input
+              type="number"
+              required
+              placeholder="50000"
+              max={saldoDiTangan}
+              value={pinjamForm.nominal}
+              onChange={(e) => setPinjamForm({ ...pinjamForm, nominal: e.target.value })}
+              className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none font-bold text-violet-700"
+            />
+            <span className="text-[10px] text-slate-500 mt-1 block">
+              Maksimal pinjaman dari kas dipegang: {formatRupiah(saldoDiTangan)}
+            </span>
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 mb-1">Keterangan</label>
+            <input
+              type="text"
+              placeholder="Keperluan pinjaman..."
+              value={pinjamForm.keterangan}
+              onChange={(e) => setPinjamForm({ ...pinjamForm, keterangan: e.target.value })}
+              className="w-full border border-slate-300 rounded-lg p-2.5 focus:border-sky-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsPinjamModalOpen(false)}
+              className="bg-slate-300 hover:bg-slate-400 text-slate-800 font-bold px-4 py-2 rounded-lg"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || saldoDiTangan <= 0}
+              className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg"
+            >
+              {isSubmitting ? 'Menyimpan...' : 'Simpan Pinjaman'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: Detail Saldo */}
+      <Modal
+        isOpen={isSaldoDetailOpen}
+        onClose={() => setIsSaldoDetailOpen(false)}
+        title="Rincian Saldo Kas"
+      >
+        <div className="space-y-3 text-xs">
+          <div className="grid grid-cols-1 gap-2">
+            <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-200">
+              <span className="text-[10px] text-emerald-700 font-bold uppercase block">Saldo dipegang</span>
+              <span className="text-lg font-extrabold text-emerald-900">{formatRupiah(saldoDiTangan)}</span>
+              <p className="text-[10px] text-emerald-700 mt-0.5">Kas tunai yang masih ada setelah dikurangi pinjaman.</p>
+            </div>
+            <div className="bg-violet-50 p-3 rounded-lg border border-violet-200">
+              <span className="text-[10px] text-violet-700 font-bold uppercase block">Uang dipinjam</span>
+              <span className="text-lg font-extrabold text-violet-900">{formatRupiah(uangDipinjam)}</span>
+              <p className="text-[10px] text-violet-700 mt-0.5">Pinjaman kas yang belum dikembalikan.</p>
+            </div>
+            <div className="bg-sky-50 p-3 rounded-lg border border-sky-200">
+              <span className="text-[10px] text-sky-700 font-bold uppercase block">Total saldo yang seharusnya ada</span>
+              <span className="text-lg font-extrabold text-sky-900">{formatRupiah(saldoSeharusnya)}</span>
+              <p className="text-[10px] text-sky-700 mt-0.5">Pemasukan dikurangi setoran, sebelum dipotong pinjaman.</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-600 flex items-start gap-2">
+            <Info className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
+            <p>
+              {formatRupiah(saldoSeharusnya)} = {formatRupiah(saldoDiTangan)} dipegang + {formatRupiah(uangDipinjam)} dipinjam.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="font-bold text-slate-800 flex items-center space-x-1">
+              <HandCoins className="w-4 h-4 text-violet-600" />
+              <span>Riwayat Pinjaman</span>
+            </h4>
+            {loanHistory.length === 0 ? (
+              <p className="text-slate-400 italic text-[11px]">Belum ada pinjaman kas.</p>
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {loanHistory.map((loan) => (
+                  <div key={loan.id} className="p-2.5 space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-slate-800 block">{loan.peminjam}</span>
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(loan.tanggal + 'T00:00:00').toLocaleDateString('id-ID', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                          {loan.keterangan ? ` · ${loan.keterangan}` : ''}
+                        </span>
+                      </div>
+                      <span className="font-extrabold text-violet-700">{formatRupiah(loan.nominal)}</span>
+                    </div>
+                    {loan.sisa > 0 ? (
+                      <button
+                        type="button"
+                        disabled={isSubmitting}
+                        onClick={() => handleRepayLoan(loan.id)}
+                        className="w-full bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-800 font-bold py-1.5 rounded-lg border border-emerald-200 flex items-center justify-center gap-1"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Kembalikan {formatRupiah(loan.sisa)}
+                      </button>
+                    ) : (
+                      <span className="inline-block text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                        Sudah dikembalikan
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => setIsSaldoDetailOpen(false)}
+              className="bg-sky-500 hover:bg-sky-600 text-white font-bold px-4 py-2 rounded-lg"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Modal 4: Detail Keuangan Santri */}

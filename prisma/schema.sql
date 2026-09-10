@@ -79,3 +79,24 @@ CREATE TABLE IF NOT EXISTS `cash_handouts` (
   `updatedAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT `fk_cash_ustadz` FOREIGN KEY (`ustadzId`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 7. Tabel Pinjaman Kas (Cash Loans)
+CREATE TABLE IF NOT EXISTS `cash_loans` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `amount` DECIMAL(12, 2) NOT NULL,
+  `loanDate` DATE NOT NULL,
+  `borrower` VARCHAR(100) NOT NULL,
+  `description` VARCHAR(255) NULL,
+  `repaidAmount` DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  `createdAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 8. Relasi Tagihan ke Santri (kosong = berlaku untuk semua santri)
+CREATE TABLE IF NOT EXISTS `fee_category_santri` (
+  `feeCategoryId` INT NOT NULL,
+  `santriId` INT NOT NULL,
+  PRIMARY KEY (`feeCategoryId`, `santriId`),
+  CONSTRAINT `fk_fcs_fee` FOREIGN KEY (`feeCategoryId`) REFERENCES `fee_categories` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_fcs_santri` FOREIGN KEY (`santriId`) REFERENCES `santri` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
